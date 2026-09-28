@@ -3,6 +3,12 @@
 Data: 2026-09-28
 Escopo: remover rastros do Lovable, trocar Bun por npm, substituir TanStack Start/Router/Query por React + Vite (SPA), podar código morto e envelopar como app desktop com Tauri v2.
 
+## Status (2026-09-28)
+
+Fases 0 a 6 implementadas e commitadas. `typecheck`, `lint` e `build` verdes; front-end validado no Chrome (dev e produção).
+
+**Pendente:** a compilação Rust (`cargo check` / `tauri:dev`) está bloqueada por falta do MSVC Build Tools na máquina — `link.exe not found`. O `rustup default` já foi corrigido para `stable-x86_64-pc-windows-msvc`. Instalar o *Visual Studio Build Tools 2022* com o workload "Desktop development with C++" destrava a Fase 5; a config do Tauri já está pronta e não precisa de ajuste.
+
 ---
 
 ## 1. Diagnóstico do estado atual
