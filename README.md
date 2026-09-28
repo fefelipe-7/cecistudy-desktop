@@ -1,29 +1,40 @@
-# Welcome to your Lovable project
+# Campus
 
-This project was built with [Lovable](https://lovable.dev).
+App desktop de organização acadêmica: aulas, entregas, provas e notas em uma
+interface densa e rápida de operar.
 
-## Build with Lovable
+## Stack
 
-Open your project in the [Lovable editor](https://lovable.dev) and keep building.
+React 19 · Vite 8 · TypeScript · Tailwind CSS 4 · shadcn/ui · Tauri 2
 
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: connect the project to GitHub and every change made in Lovable is committed straight to your repository.
-- **Full ownership**: this code is yours. Push to your repository and your changes sync back into Lovable, ready for your next prompt.
+## Desenvolvimento
 
-## Development
-
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
+Requisitos: Node >= 22, npm, Rust (toolchain `x86_64-pc-windows-msvc`) e Visual
+Studio Build Tools com o workload "Desktop development with C++".
 
 ```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
-npm run dev
+npm install
+npm run dev         # front-end em http://localhost:1420
+npm run tauri:dev   # app desktop
 ```
 
-## Built with
+## Scripts
 
-- TanStack Start
-- TypeScript
-- React
-- Tailwind CSS
+| Script                | O que faz                                        |
+| --------------------- | ------------------------------------------------ |
+| `npm run dev`         | Vite em http://localhost:1420 (só o front-end)   |
+| `npm run build`       | typecheck + build de produção em `dist/`         |
+| `npm run tauri:dev`   | app desktop em desenvolvimento                   |
+| `npm run tauri:build` | instalável em `src-tauri/target/release/bundle/` |
+| `npm run lint`        | ESLint                                           |
+| `npm run typecheck`   | `tsc --noEmit`                                   |
+| `npm run format`      | Prettier                                         |
+
+## Estrutura
+
+- `index.html` — shell do front-end
+- `src/main.tsx` — bootstrap React
+- `src/App.tsx` — dashboard único e seus modos de visualização
+- `src/components/ui/` — componentes shadcn
+- `src-tauri/` — shell Rust (janela, menu, permissões)
+- `DESIGN.md` / `PRODUCT.md` — direção de design e de produto

@@ -1,15 +1,29 @@
-// @lovable.dev/vite-tanstack-config already includes the following — do NOT add them manually
-// or the app will break with duplicate plugins:
-//   - TanStack devtools (dev-only, first), tanstackStart, viteReact, tailwindcss, tsConfigPaths,
-//     nitro (build-only using cloudflare as a default target), VITE_* env injection, @ path alias,
-//     React/TanStack dedupe, error logger plugins, and sandbox detection (port/host/strictPort).
-// You can pass additional config via defineConfig({ vite: { ... }, etc... }) if needed.
-import { defineConfig } from "@lovable.dev/vite-tanstack-config";
+import tailwindcss from "@tailwindcss/vite";
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
 
+// https://vite.dev/config/
 export default defineConfig({
-  tanstackStart: {
-    // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
-    // nitro/vite builds from this
-    server: { entry: "server" },
+  plugins: [react(), tailwindcss()],
+  // O Vite 8 resolve os paths do tsconfig nativamente (substitui vite-tsconfig-paths).
+  resolve: {
+    tsconfigPaths: true,
+  },
+  clearScreen: false,
+  server: {
+    // Porta fixa: o Tauri assume o dev server em localhost:1420 (tauri.conf.json).
+    port: 1420,
+    strictPort: true,
+    watch: {
+      // Evita que o watcher do Vite reinicie ao tocar em src-tauri/target.
+      ignored: ["**/src-tauri/**"],
+    },
+  },
+  // Tauri injeta TAURI_ENV_* e afins; VITE_ cobre o front-end.
+  envPrefix: ["VITE_", "TAURI_ENV_*"],
+  build: {
+    target: "es2022",
+    // Vite 8 usa rolldown/oxc — nao passar "esbuild" aqui (nao e mais dependencia do Vite).
+    sourcemap: false,
   },
 });

@@ -9,28 +9,28 @@ Escopo: remover rastros do Lovable, trocar Bun por npm, substituir TanStack Star
 
 ### 1.1 Stack existente
 
-| Camada | Hoje |
-| --- | --- |
-| Runtime / PM | Bun (`bun.lock` 140 KB, `bunfig.toml`) |
-| Framework | TanStack Start 1.168 (SSR, Nitro 3, server entry) |
-| Roteador | TanStack Router 1.170 (file-based) + `@tanstack/router-plugin` |
-| Data | TanStack Query 5.101 |
-| Build | Vite 8 + `@lovable.dev/vite-tanstack-config` 2.24 (wrapper com tudo acima) |
-| UI | Tailwind 4 + shadcn/ui "new-york" (49 arquivos em `src/components/ui/`) |
-| Rotas | 1 rota real (`src/routes/index.tsx`, 570 linhas) + `__root.tsx` (shell SSR) |
+| Camada       | Hoje                                                                        |
+| ------------ | --------------------------------------------------------------------------- |
+| Runtime / PM | Bun (`bun.lock` 140 KB, `bunfig.toml`)                                      |
+| Framework    | TanStack Start 1.168 (SSR, Nitro 3, server entry)                           |
+| Roteador     | TanStack Router 1.170 (file-based) + `@tanstack/router-plugin`              |
+| Data         | TanStack Query 5.101                                                        |
+| Build        | Vite 8 + `@lovable.dev/vite-tanstack-config` 2.24 (wrapper com tudo acima)  |
+| UI           | Tailwind 4 + shadcn/ui "new-york" (49 arquivos em `src/components/ui/`)     |
+| Rotas        | 1 rota real (`src/routes/index.tsx`, 570 linhas) + `__root.tsx` (shell SSR) |
 
 ### 1.2 Achados — rastros do Lovable (grep `lovable`, case-insensitive)
 
-| Arquivo | Ocorrência | Ação |
-| --- | --- | --- |
-| `.lovable/project.json` | template `tanstack_start_ts_current` | deletar diretório |
-| `package.json:73` | `@lovable.dev/vite-tanstack-config` | remover dep |
-| `bunfig.toml:7` | `minimumReleaseAgeExcludes` com 4 pacotes `@lovable.dev/*` | deletar arquivo |
-| `vite.config.ts:1-7` | import + comentário de 6 linhas explicando os plugins do Lovable | reescrever |
-| `AGENTS.md:1-10` | bloco `<!-- LOVABLE:BEGIN -->` | remover bloco |
-| `README.md:1-11` | "Welcome to your Lovable project" / "Build with Lovable" | reescrever |
-| `src/lib/lovable-error-reporting.ts` | 59 linhas, `window.__lovableEvents`, `window.__lovableReportRuntimeError` | deletar |
-| `src/routes/__root.tsx:13,41` | `reportLovableError(...)` no ErrorComponent | remover chamada |
+| Arquivo                              | Ocorrência                                                                | Ação              |
+| ------------------------------------ | ------------------------------------------------------------------------- | ----------------- |
+| `.lovable/project.json`              | template `tanstack_start_ts_current`                                      | deletar diretório |
+| `package.json:73`                    | `@lovable.dev/vite-tanstack-config`                                       | remover dep       |
+| `bunfig.toml:7`                      | `minimumReleaseAgeExcludes` com 4 pacotes `@lovable.dev/*`                | deletar arquivo   |
+| `vite.config.ts:1-7`                 | import + comentário de 6 linhas explicando os plugins do Lovable          | reescrever        |
+| `AGENTS.md:1-10`                     | bloco `<!-- LOVABLE:BEGIN -->`                                            | remover bloco     |
+| `README.md:1-11`                     | "Welcome to your Lovable project" / "Build with Lovable"                  | reescrever        |
+| `src/lib/lovable-error-reporting.ts` | 59 linhas, `window.__lovableEvents`, `window.__lovableReportRuntimeError` | deletar           |
+| `src/routes/__root.tsx:13,41`        | `reportLovableError(...)` no ErrorComponent                               | remover chamada   |
 
 Não há outros rastros (nada em `public/`, `DESIGN.md`, `PRODUCT.md`, `roadmap.md`).
 
@@ -65,23 +65,23 @@ Radix não usados: `accordion`, `alert-dialog`, `aspect-ratio`, `avatar`, `colla
 
 ### 1.4 Ambiente (verificado nesta máquina)
 
-| Item | Estado |
-| --- | --- |
-| Node | v26.3.1 |
-| npm | 12.0.2 (registry: `registry.npmmirror.com`) |
-| bun | instalado, mas deixa de ser usado |
-| `node_modules/` | **não existe** — o install será limpo |
-| Rust | 1.97.0 presente, mas **toolchain default = `stable-x86_64-pc-windows-gnullvm`** |
-| Toolchain msvc | instalado (`stable-x86_64-pc-windows-msvc`, 1.98.0) |
-| MSVC Build Tools / VS | **AUSENTE** (sem `Microsoft Visual Studio`, sem `vswhere.exe`) |
-| WebView2 Runtime | instalado (154.0.4258.37) ✔ |
+| Item                  | Estado                                                                          |
+| --------------------- | ------------------------------------------------------------------------------- |
+| Node                  | v26.3.1                                                                         |
+| npm                   | 12.0.2 (registry: `registry.npmmirror.com`)                                     |
+| bun                   | instalado, mas deixa de ser usado                                               |
+| `node_modules/`       | **não existe** — o install será limpo                                           |
+| Rust                  | 1.97.0 presente, mas **toolchain default = `stable-x86_64-pc-windows-gnullvm`** |
+| Toolchain msvc        | instalado (`stable-x86_64-pc-windows-msvc`, 1.98.0)                             |
+| MSVC Build Tools / VS | **AUSENTE** (sem `Microsoft Visual Studio`, sem `vswhere.exe`)                  |
+| WebView2 Runtime      | instalado (154.0.4258.37) ✔                                                     |
 
 ---
 
 ## 2. Decisões fechadas
 
 1. **Stack alvo:** React 19 + Vite (SPA) + Tauri v2. Sem SSR, sem roteador, sem server functions.
-2. **shadcn:** manter *curated set* (18 componentes) e apagar o resto.
+2. **shadcn:** manter _curated set_ (18 componentes) e apagar o resto.
 3. **Lovable:** remover todos os rastros, inclusive o bloco do AGENTS.md.
 4. **bunfig.toml:** descartar o guard `minimumReleaseAge` (sem `.npmrc` substituto).
 
@@ -89,10 +89,10 @@ Radix não usados: `accordion`, `alert-dialog`, `aspect-ratio`, `avatar`, `colla
 
 ## 3. Bloqueios a resolver antes da Fase 5 (Tauri)
 
-- [ ] **BLOQUEIO — MSVC toolchain ausente.** Tauri v2 no Windows linka com MSVC. Instalar *Visual Studio Build Tools 2022* com o workload **"Desktop development with C++"** (MSVC v143 + Windows 10/11 SDK + CMake). Sem isso `tauri dev` e `tauri build` não compilam.
+- [ ] **BLOQUEIO — MSVC toolchain ausente.** Tauri v2 no Windows linka com MSVC. Instalar _Visual Studio Build Tools 2022_ com o workload **"Desktop development with C++"** (MSVC v143 + Windows 10/11 SDK + CMake). Sem isso `tauri dev` e `tauri build` não compilam.
 - [ ] **Toolchain Rust default está errada.** `rustup default stable-x86_64-pc-windows-gnullvm` não serve. Rodar `rustup default stable-x86_64-pc-windows-msvc` (ou fixar via `rust-toolchain.toml`).
-- [ ] *(Opcional,Rede)* npm usa `npmmirror`; o cargo baixa do crates.io. Se a rede estiver lenta, configurar mirror em `~/.cargo/config.toml` (fora do repo).
-- [ ] *(Recomendado)* `git init` + commit inicial **antes** de qualquer deleção, para ter ponto de retorno.
+- [ ] _(Opcional,Rede)_ npm usa `npmmirror`; o cargo baixa do crates.io. Se a rede estiver lenta, configurar mirror em `~/.cargo/config.toml` (fora do repo).
+- [ ] _(Recomendado)_ `git init` + commit inicial **antes** de qualquer deleção, para ter ponto de retorno.
 
 ---
 
@@ -113,14 +113,14 @@ Motivo: o diretório não é repo git e a Fase 1 apaga ~15 arquivos. `npm run bu
 
 ### Fase 1 — Bun → npm
 
-| Ação | Detalhe |
-| --- | --- |
-| Deletar | `bun.lock`, `bunfig.toml` |
-| Editar | `.prettierignore` — remover a linha `bun.lock` (linha 7); `package-lock.json` (linha 6) e `pnpm-lock.yaml` (linha 5) já estão lá |
-| Editar | `package.json` — `"name": "tanstack_start_ts"` → `"campus-desktop"` |
-| Editar | `package.json` — adicionar `"engines": { "node": ">=22" }` |
-| Editar | `package.json` — remover o script `"build:dev"` (usa `--mode development`, herança do template) |
-| Criar | `package-lock.json` via `npm install` (na Fase 4, junto da poda de deps) |
+| Ação    | Detalhe                                                                                                                          |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Deletar | `bun.lock`, `bunfig.toml`                                                                                                        |
+| Editar  | `.prettierignore` — remover a linha `bun.lock` (linha 7); `package-lock.json` (linha 6) e `pnpm-lock.yaml` (linha 5) já estão lá |
+| Editar  | `package.json` — `"name": "tanstack_start_ts"` → `"campus-desktop"`                                                              |
+| Editar  | `package.json` — adicionar `"engines": { "node": ">=22" }`                                                                       |
+| Editar  | `package.json` — remover o script `"build:dev"` (usa `--mode development`, herança do template)                                  |
+| Criar   | `package-lock.json` via `npm install` (na Fase 4, junto da poda de deps)                                                         |
 
 **Aceite:** `bun.lock` e `bunfig.toml` não existem mais; nenhum arquivo do repo menciona bun.
 
@@ -135,6 +135,7 @@ O app tem **uma única tela** com modos de visualização internos (`today | cal
 **Arquivos a criar:**
 
 `index.html`
+
 ```html
 <!doctype html>
 <html lang="pt-BR">
@@ -146,7 +147,10 @@ O app tem **uma única tela** com modos de visualização internos (`today | cal
     <meta name="description" content="Organize aulas, tarefas, provas e notas em um só lugar." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+    />
   </head>
   <body>
     <div id="root"></div>
@@ -154,9 +158,11 @@ O app tem **uma única tela** com modos de visualização internos (`today | cal
   </body>
 </html>
 ```
+
 > `lang="pt-BR"` corrige o `lang="en"` do shell atual. Os `<meta>`/`<title>` acima migram do bloco `head()` de `__root.tsx:76-98`; os `og:*` saem (sem servidor, não há preview de crawler).
 
 `src/main.tsx`
+
 ```tsx
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -172,9 +178,11 @@ createRoot(root).render(
   </StrictMode>,
 );
 ```
+
 > O import da stylesheet vira `import "./styles.css"` (antes era `appCss from "../styles.css?url"` para SSR). Manter o `<link>` de fontes no `index.html`.
 
 `src/App.tsx` — mover o corpo de `src/routes/index.tsx` com 3 alterações:
+
 1. remover `import { createFileRoute } from "@tanstack/react-router";`
 2. remover o export `Route = createFileRoute("/")({ head: ..., component: StudyApp })` e o bloco `head()` (linhas 32-44)
 3. `export default StudyApp;` no lugar de `component: StudyApp`
@@ -182,6 +190,7 @@ createRoot(root).render(
 O resto (570 linhas: sidebar, header, `TodayView`, `CalendarView`, `KanbanView`, `ListView`, `SubjectView`, busca ⌘K) vai **literal**, sem alteração de lógica. `@/` e os imports de `lucide-react`, `@/components/ui/button`, `@/components/ui/tooltip`, `@/hooks/use-mobile`, `@/lib/utils` continuam válidos.
 
 **`vite.config.ts` (reescrever do zero)**
+
 ```ts
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
@@ -207,6 +216,7 @@ export default defineConfig({
 ```
 
 **`tsconfig.json`**
+
 - `include`: `["src/**/*.ts", "src/**/*.tsx", "vite.config.ts", "eslint.config.js"]` (manter)
 - `types: ["vite/client"]` (manter) — cobre `import.meta.env`
 - remover `allowImportingTsExtensions: true` (convenção de import sem extensão; só o `routeTree.gen.ts` usava, e ele foi deletado)
@@ -214,6 +224,7 @@ export default defineConfig({
 - adicionar `"scripts": { "typecheck": "tsc --noEmit" }` no package.json
 
 **`package.json` — scripts finais**
+
 ```json
 "dev": "vite dev",
 "build": "tsc --noEmit && vite build",
@@ -223,6 +234,7 @@ export default defineConfig({
 "format": "prettier --write .",
 "tauri": "tauri"
 ```
+
 (A Fase 5 acrescenta `tauri:dev` e `tauri:build`.)
 
 **Aceite:** `npm run dev` serve a tela em `http://localhost:1420` com o dashboard idêntico ao atual; `npm run build` gera `dist/`; nenhum import de `@tanstack/*` no repo.
@@ -231,18 +243,19 @@ export default defineConfig({
 
 ### Fase 3 — Remover rastros do Lovable
 
-| Arquivo | Alteração |
-| --- | --- |
-| `.lovable/project.json` | deletar diretório `.lovable/` |
-| `AGENTS.md` | remover linhas 1-10 (bloco `<!-- LOVABLE:BEGIN --> … <!-- LOVABLE:END -->`). Manter a seção "Project architecture" (linhas 12-14) e acrescentar as convenções da nova stack. |
-| `README.md` | reescrever (ver §4.3) |
-| `src/lib/lovable-error-reporting.ts` | deletar |
-| `public/robots.txt` | deletar (não há servidor web) |
+| Arquivo                              | Alteração                                                                                                                                                                    |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.lovable/project.json`              | deletar diretório `.lovable/`                                                                                                                                                |
+| `AGENTS.md`                          | remover linhas 1-10 (bloco `<!-- LOVABLE:BEGIN --> … <!-- LOVABLE:END -->`). Manter a seção "Project architecture" (linhas 12-14) e acrescentar as convenções da nova stack. |
+| `README.md`                          | reescrever (ver §4.3)                                                                                                                                                        |
+| `src/lib/lovable-error-reporting.ts` | deletar                                                                                                                                                                      |
+| `public/robots.txt`                  | deletar (não há servidor web)                                                                                                                                                |
 
 > `src/routes/__root.tsx` (único consumidor da telemetria) já foi deletado na Fase 2, então o `reportLovableError` sai junto sem etapa extra.
 
 **`README.md` novo**
-```md
+
+````md
 # Campus
 
 App desktop de organização acadêmica: aulas, entregas, provas e notas em uma
@@ -261,16 +274,17 @@ com o workload "Desktop development with C++".
 npm install
 npm run tauri:dev   # abre a janela do app
 ```
+````
 
 ## Scripts
 
-| Script | O que faz |
-| --- | --- |
-| `npm run dev` | Vite em http://localhost:1420 (só o front-end) |
-| `npm run build` | typecheck + build de produção em `dist/` |
-| `npm run tauri:dev` | app desktop em desenvolvimento |
-| `npm run tauri:build` | artefato instalável em `src-tauri/target/release/bundle/` |
-| `npm run lint` / `npm run typecheck` / `npm run format` | qualidade |
+| Script                                                  | O que faz                                                 |
+| ------------------------------------------------------- | --------------------------------------------------------- |
+| `npm run dev`                                           | Vite em http://localhost:1420 (só o front-end)            |
+| `npm run build`                                         | typecheck + build de produção em `dist/`                  |
+| `npm run tauri:dev`                                     | app desktop em desenvolvimento                            |
+| `npm run tauri:build`                                   | artefato instalável em `src-tauri/target/release/bundle/` |
+| `npm run lint` / `npm run typecheck` / `npm run format` | qualidade                                                 |
 
 ## Estrutura
 
@@ -280,7 +294,8 @@ npm run tauri:dev   # abre a janela do app
 - `src/components/ui/` — componentes shadcn
 - `src-tauri/` — shell Rust (janela, wmenu, permissões)
 - `DESIGN.md` / `PRODUCT.md` — direção de design e produto
-```
+
+````
 
 **Aceite:** `rg -i lovable .` não retorna nada (fora de `node_modules`, `.git`, `SPEC.md`).
 
@@ -315,7 +330,7 @@ DevDeps que sobram: `@eslint/js`, `@types/node`, `@types/react`, `@types/react-d
 ```sh
 npm install        # gera package-lock.json a partir do package.json podado
 npm run lint && npm run typecheck && npm run build
-```
+````
 
 **Aceite:** `npm ls --depth=0` sem vulnerabilidades deloating; zero arquivos em `src/components/ui/` fora do curated set; `npm run build` e `npm run typecheck` passam.
 
@@ -340,21 +355,22 @@ npx tauri icon public/favicon.ico     # gera o set de ícones do Windows/macOS/L
 
 **`tauri.conf.json` — ajustes sobre o default gerado:**
 
-| Chave | Valor | Motivo |
-| --- | --- | --- |
-| `app.windows[0].title` | `Campus` | |
-| `app.windows[0].width` / `height` | `1280` / `820` | cabe a sidebar 248px + conteúdo |
-| `app.windows[0].minWidth` / `minHeight` | `1024` / `640` | o layout usa `lg:`/`xl:` breakpoints |
-| `app.windows[0].backgroundColor` | `#F8F6FA` | converter de `--background: oklch(0.975 0.008 325.6)` para evitar o flash branco no load |
-| `app.windows[0].decorations` | `true` | mantém os controles nativos (o DESIGN.md pede remover a *falsa* moldura desenhada em CSS, não a nativa) |
-| `build.devUrl` | `http://localhost:1420` | casa com `server.port` da Fase 2 |
-| `build.frontendDist` | `../dist` | |
-| `build.beforeDevCommand` | `npm run dev` | |
-| `build.beforeBuildCommand` | `npm run build` | |
-| `app.security.csp` | `null` em dev; `'default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com'` em prod | o `vibrancy`/Inter vêm de fora |
-| `app.withGlobalTauri` | `false` | |
+| Chave                                   | Valor                                                                                                                                            | Motivo                                                                                                  |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| `app.windows[0].title`                  | `Campus`                                                                                                                                         |                                                                                                         |
+| `app.windows[0].width` / `height`       | `1280` / `820`                                                                                                                                   | cabe a sidebar 248px + conteúdo                                                                         |
+| `app.windows[0].minWidth` / `minHeight` | `1024` / `640`                                                                                                                                   | o layout usa `lg:`/`xl:` breakpoints                                                                    |
+| `app.windows[0].backgroundColor`        | `#F8F6FA`                                                                                                                                        | converter de `--background: oklch(0.975 0.008 325.6)` para evitar o flash branco no load                |
+| `app.windows[0].decorations`            | `true`                                                                                                                                           | mantém os controles nativos (o DESIGN.md pede remover a _falsa_ moldura desenhada em CSS, não a nativa) |
+| `build.devUrl`                          | `http://localhost:1420`                                                                                                                          | casa com `server.port` da Fase 2                                                                        |
+| `build.frontendDist`                    | `../dist`                                                                                                                                        |                                                                                                         |
+| `build.beforeDevCommand`                | `npm run dev`                                                                                                                                    |                                                                                                         |
+| `build.beforeBuildCommand`              | `npm run build`                                                                                                                                  |                                                                                                         |
+| `app.security.csp`                      | `null` em dev; `'default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com'` em prod | o `vibrancy`/Inter vêm de fora                                                                          |
+| `app.withGlobalTauri`                   | `false`                                                                                                                                          |                                                                                                         |
 
 **Scripts a acrescentar:**
+
 ```json
 "tauri:dev": "tauri dev",
 "tauri:build": "tauri build"
