@@ -1,0 +1,86 @@
+name: ci
+
+# Gate do Campus. Débito C8 do grupo: havia 173 testes TypeScript e 22 Rust
+# escritos, **nenhum** script `test` e nenhuma CI — ou seja, 195 testes que
+# ninguém rodava. Este arquivo é o que transforma regra em garantia.
+#
+# O que roda, e por quê:
+#   typecheck + lint   → o TypeScript compila e segue o estilo do projeto
+#   test (Node)        → os testes de domínio, sem toolchain Rust
+#   test:rust          → os testes do backend, que é onde a regra de domínio mora
+#   gate:boundary      → fronteiras viradas em código executável
+#
+# `npm run gate` é o mesmo encadeamento, para rodar localmente antes do push.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Segue o padrão do mobile: um push na main cancela o run anterior da mesma
+# branch, porque o valor está no resultado final, não em cada tentativa.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: install deps
+        run: npm ci
+
+      - name: instalar toolchain Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      # Dependências de sistema do Tauri v2 no Linux. Sem elas o `cargo test`
+      # não compila o `webkit2gtk-sys`, e o gate Rust passa a ser decorativo —
+      # foi exatamente o que aconteceu antes deste workflow existir.
+      - name: dependências de sistema do Tauri
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libxdo-dev
+
+      # Cache do alvo do cargo: compilar o Tauri do zero é o item mais lento
+      # deste workflow.
+      - name: cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: cargo-
+
+      - name: typecheck
+        run: npm run typecheck
+
+      - name: lint
+        run: npm run lint
+
+      - name: test (domínio TypeScript)
+        run: npm run test
+
+      - name: test (backend Rust)
+        run: npm run test:rust
+
+      - name: boundary check
+        run: npm run gate:boundary

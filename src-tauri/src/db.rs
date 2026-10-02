@@ -95,9 +95,13 @@ impl Db {
             // `PRAGMA user_version` não aceita placeholder, mas o valor é um
             // inteiro derivado do índice do array — nunca entrada do usuário.
             tx.pragma_update(None, "user_version", version)?;
-            tx.commit()?;
+tx.commit()?;
         }
-        conn.pragma_query_value(None, "user_version", |row| row.get(0))
+        // Mesmo formato da leitura no topo da função: a anotação `u32` é o que
+        // fixa a inferência de `row.get(0)`. Sem ela o compilador tenta
+        // `Result<u32, DbError>` como tipo da coluna e não encontra `FromSql`.
+        let applied: u32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
+        Ok(applied)
     }
 
     /// Roda `f` numa transação de escrita. Todo comando de escrita usa isto, para
@@ -215,14 +219,18 @@ mod tests {
                          'UTC', 'opcional', 'planejado', 'cecistudy', ?3, ?3)",
                 rusqlite::params![now, now + 3_600_000, now],
             )?;
-            // Viola o CHECK ends_at >= starts_at depois do primeiro insert.
+            // Viola o CHECK ends_at >= starts_at (migration 0001, linha 45) depois do
+            // primeiro insert. Precisa ser `ends_at` **menor** que `starts_at`:
+            // com os dois iguais o `>=` é satisfeito e nada falha — a versão
+            // anterior deste teste passava `?1, ?1` e por isso nunca exercitou
+            // o rollback que ele existe para provar.
             tx.execute(
                 "INSERT INTO calendar_event
                    (id, layer_id, title, starts_at, ends_at, all_day, plain_date,
                     time_zone, commitment, state, origin, created_at, updated_at)
-                 VALUES ('evt-ruim', 'faculdade', 'Ruim', ?1, ?1, 0, NULL,
+                 VALUES ('evt-ruim', 'faculdade', 'Ruim', ?1, ?2, 0, NULL,
                          'UTC', 'opcional', 'planejado', 'cecistudy', ?1, ?1)",
-                rusqlite::params![now],
+                rusqlite::params![now, now - 3_600_000],
             )?;
             Ok(())
         });

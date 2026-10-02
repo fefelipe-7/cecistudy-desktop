@@ -13,6 +13,11 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
+    "test": "node --experimental-strip-types --test \"src/features/calendar/domain/*.test.ts\"",
+    "test:watch": "node --experimental-strip-types --test --watch \"src/features/calendar/domain/*.test.ts\"",
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "gate": "npm run typecheck && npm run lint && npm run test && npm run test:rust && npm run gate:boundary",
+    "gate:boundary": "node scripts/check-boundaries.mjs",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"

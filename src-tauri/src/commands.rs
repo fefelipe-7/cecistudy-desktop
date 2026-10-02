@@ -293,7 +293,10 @@ fn expand_rule(event: &RecurringEvent, from: i64, to: i64) -> Result<Vec<i64>, D
         None => return Ok(Vec::new()),
     };
     let parts = parse_rrule(&rrule);
-    let freq = parts.get("FREQ").copied().unwrap_or("WEEKLY");
+    // `parse_rrule` devolve `HashMap<String, String>`, então o valor sai por
+    // referência: `.cloned()` copia a `String`, `as_str()` empresta o `&str` que
+    // `matches_freq` espera. `.copied()` não existe para `String` (não é `Copy`).
+    let freq: &str = parts.get("FREQ").map(String::as_str).unwrap_or("WEEKLY");
     let interval = parts
         .get("INTERVAL")
         .and_then(|value| value.parse::<i64>().ok())
@@ -360,12 +363,20 @@ fn parse_rrule(value: &str) -> std::collections::HashMap<String, String> {
 /// `MO..SU` para 0..6, aceitando o prefixo numérico que o RFC 5545 permite.
 fn weekday_index(day: &str) -> Option<i64> {
     let day = day.trim();
-    let name = match day.len() {
-        2 => day,
-        _ => {
-            let letters: String = day.chars().take_while(|c| c.is_ascii_alphabetic()).collect();
-            letters.as_str()
-        }
+    // `String` e não `&str`: o prefixo numérico do RFC 5545 (`2MO`, `-1MO`) obriga
+    // a alocar, e devolver `&str` de uma `String` local seria devolver um
+    // emprestado que morre aqui.
+    let name: String = if day.len() == 2 {
+        day.to_string()
+    } else {
+        // Tira o prefixo não-alfabético **antes** de tomar as letras. Tomar as
+        // letras direto do começo devolvia string vazia para `"2MO"` — o `2` não é
+        // alfabético, então `take_while` parava no primeiro caractere e o dia era
+        // descartado como inválido, apesar de o doc comment prometer suporte.
+        day.trim_start_matches(|c: char| !c.is_ascii_alphabetic())
+            .chars()
+            .take_while(|c| c.is_ascii_alphabetic())
+            .collect()
     };
     match name.to_uppercase().as_str() {
         "MO" => Some(0),
@@ -548,10 +559,22 @@ pub fn list_responsibilities_core(
 ) -> Result<Vec<Responsibility>, DbError> {
     let conn = db.conn()?;
     let mut stmt = conn.prepare(
+        // O filtro é "não filtrar" quando o campo é `None`. `coluna IS ?param`
+        // **não** faz isso: com o parâmetro nulo ele vira literalmente
+        // `coluna IS NULL` e descarta tudo que tem valor — a chamada sem filtro
+        // devolvia zero responsabilidades, porque `state` nunca é nulo.
+        // A forma correta compara o parâmetro contra si mesmo.
+        //
+        // `due_before` significa "vence **antes** deste instante", então é `<=`
+        // e não `=`: o item com prazo em `T0 - 1h` está vencido para o filtro `T0`.
+        // `due_at` nulo é excluído por construção (`NULL <= ?1` é `NULL`), e é o
+        // certo: sem prazo não é "vence antes de".
         "SELECT id, layer_id, title, kind, commitment, state, due_at,
                 planned_duration_min, origin, owner_id, parent_id
          FROM responsibility
-         WHERE due_at IS ?1 AND state IS ?2 AND layer_id IS ?3
+         WHERE (?1 IS NULL OR due_at <= ?1)
+           AND (?2 IS NULL OR state = ?2)
+           AND (?3 IS NULL OR layer_id = ?3)
          ORDER BY due_at IS NULL, due_at, title",
     )?;
     let rows = stmt.query_map(params![filter.due_before, filter.state, filter.layer_id], |r| {
@@ -1707,7 +1730,7 @@ mod tests {
             &db,
             UpdateEvent {
                 id: created.id.clone(),
-                patch: UpsertEventPatch { title: Some("Novo").into(), ..Default::default() },
+                patch: UpsertEventPatch { title: Some("Novo".to_string()), ..Default::default() },
             },
         )
         .expect("atualiza");
@@ -1827,6 +1850,7 @@ mod tests {
                 rule_id: "rule-1".into(),
                 rrule: "FREQ=DAILY".into(),
                 scope: "esta_ocorrencia".into(),
+                occurrence_id: Some("occ-1".into()),
             },
         )
         .expect("atualiza");
@@ -2065,6 +2089,9 @@ mod tests {
                 rule_id: "rule-1".into(),
                 rrule: "FREQ=DAILY".into(),
                 scope: "sempre".into(),
+                // Escopo desconhecido é recusado **antes** de qualquer exigência de
+                // ocorrência, então aqui a ausência é o estado correto.
+                occurrence_id: None,
             },
         )
         .expect_err("escopo desconhecido");
