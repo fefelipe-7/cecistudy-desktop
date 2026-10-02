@@ -20,11 +20,20 @@ import {
   Target,
   Zap,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+} from "react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
+import { CalendarScreen } from "@/features/calendar/ui/CalendarScreen.tsx";
 
 type View = "today" | "calendar" | "kanban" | "list" | "subject";
 type Subject = { name: string; short: string; dot: string; soft: string };
@@ -93,11 +102,13 @@ function IconButton({
   label,
   children,
   onClick,
+  disabled,
   className,
 }: {
   label: string;
   children: ReactNode;
   onClick?: () => void;
+  disabled?: boolean;
   className?: string;
 }) {
   return (
@@ -108,6 +119,7 @@ function IconButton({
           variant="ghost"
           size="icon"
           onClick={onClick}
+          disabled={disabled}
           className={cn(
             "size-8 rounded-[7px] text-muted-foreground hover:bg-accent/60 hover:text-foreground",
             className,
@@ -135,12 +147,13 @@ export default function StudyApp() {
   }, [isMobile]);
 
   useEffect(() => {
+    // O listener vive sempre: se ficasse condicionado a `searchOpen`, o atalho
+    // só existiria com a busca já aberta, e Cmd+K nunca abriria nada.
     const handler = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         setSearchOpen(true);
       }
-      if (event.key === "Escape") setSearchOpen(false);
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
@@ -170,17 +183,32 @@ export default function StudyApp() {
         {isMobile && sidebar && (
           <button
             aria-label="Fechar barra lateral"
-            className="fixed inset-0 z-30 cursor-default bg-foreground/20 backdrop-blur-[1px]"
+            className="fixed inset-0 z-30 cursor-default scrim bg-foreground/20"
             onClick={() => setSidebar(false)}
           />
         )}
+        {/*
+          A barra recolhe **por corte** no tamanho e **por transform** no conteúdo.
+
+          Antes isto era `transition-[width] duration-200`: 200ms × ~12 quadros de
+          reflow do `<main>` inteiro, que na visão Calendário contém a grade de 7
+          colunas. Animar `width` é a transição de layout mais cara que existe
+          (DM4). O conteúdo interno já é de largura fixa (`w-[248px]`), então ele
+          desliza com `translate` — que é composto, e o layout é calculado uma
+          vez. O corte no tamanho é o que sobra, e é um quadro.
+        */}
         <aside
           className={cn(
-            "vibrancy z-40 shrink-0 overflow-hidden border-r border-border/70 bg-sidebar/95 transition-[width] duration-200 ease-out max-md:fixed max-md:inset-y-0 max-md:left-0",
+            "vibrancy z-40 shrink-0 overflow-hidden border-r border-border/70 bg-sidebar/95 max-md:fixed max-md:inset-y-0 max-md:left-0",
             sidebar ? "w-[248px]" : "w-0 border-r-0 lg:w-[68px] lg:border-r",
           )}
         >
-          <div className="flex h-full w-[248px] flex-col px-3 pb-3">
+          <div
+            className={cn(
+              "flex h-full w-[248px] flex-col px-3 pb-3 transition-transform duration-200 ease-[cubic-bezier(0,0,0.2,1)] motion-reduce:transition-none",
+              !sidebar && "-translate-x-full",
+            )}
+          >
             <button className="mt-2 flex h-11 items-center gap-2.5 rounded-[9px] px-2 text-left transition-colors hover:bg-accent/50">
               <span className="grid size-7 shrink-0 place-items-center rounded-[7px] bg-primary text-primary-foreground">
                 <GraduationCap className="size-4" />
@@ -242,7 +270,7 @@ export default function StudyApp() {
                 active={view === "kanban" || view === "list"}
                 icon={<Target />}
                 label="Entregas & Provas"
-                count="4"
+                count={String(tasks.length)}
                 onClick={() => {
                   setView("kanban");
                   if (isMobile) setSidebar(false);
@@ -285,7 +313,7 @@ export default function StudyApp() {
             </div>
 
             <div className="mt-auto space-y-1 border-t border-border/70 pt-3">
-              <NavItem icon={<Settings />} label="Preferências" collapsed={!sidebar} />
+              <NavItem disabled icon={<Settings />} label="Preferências" collapsed={!sidebar} />
               <div className="flex items-center gap-2.5 rounded-[9px] px-2 py-2">
                 <span className="grid size-7 shrink-0 place-items-center rounded-full bg-primary/15 text-[11px] font-semibold text-primary">
                   FM
@@ -321,7 +349,7 @@ export default function StudyApp() {
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-1.5">
-              <IconButton label="Notificações">
+              <IconButton label="Notificações" disabled>
                 <Bell />
               </IconButton>
               <Button
@@ -343,7 +371,7 @@ export default function StudyApp() {
                 setView={setView}
               />
             )}
-            {view === "calendar" && <CalendarView setView={setView} />}
+            {view === "calendar" && <CalendarScreen onOpenList={() => setView("list")} />}
             {view === "kanban" && <KanbanView setView={setView} />}
             {view === "list" && <ListView setView={setView} />}
             {view === "subject" && <SubjectView subject={activeSubject} />}
@@ -352,24 +380,28 @@ export default function StudyApp() {
       </div>
 
       {searchOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-start justify-center bg-foreground/25 px-4 pt-[14vh] backdrop-blur-[2px]"
-          onMouseDown={() => setSearchOpen(false)}
+        // Fechar a busca limpa o texto: reabrir com a consulta anterior faz a
+        // usuária achar que a busca já filtrou quando ela não recarregou nada.
+        <Dialog
+          open
+          onOpenChange={(open) => {
+            setSearchOpen(open);
+            if (!open) setQuery("");
+          }}
         >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="Busca rápida"
-            className="shadow-window vibrancy w-full max-w-xl overflow-hidden rounded-[14px] border border-foreground/10 bg-popover/90"
-            onMouseDown={(e) => e.stopPropagation()}
+          <DialogContent
+            showCloseButton={false}
+            className="vibrancy top-[14vh] max-w-xl translate-y-0 gap-0 overflow-hidden rounded-[14px] border-foreground/10 bg-popover/90 p-0 shadow-window"
           >
+            <DialogTitle className="sr-only">Busca rápida</DialogTitle>
             <div className="flex items-center gap-3 border-b border-border/70 px-4">
               <Search className="size-4 text-muted-foreground" />
               <input
                 autoFocus
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Buscar tarefas, disciplinas ou notas…"
+                placeholder="Buscar tarefas ou disciplinas…"
+                aria-label="Buscar tarefas ou disciplinas"
                 className="h-12 min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground"
               />
               <kbd className="rounded-[5px] border border-border/70 bg-muted px-1.5 py-px text-[10px] text-muted-foreground">
@@ -386,6 +418,7 @@ export default function StudyApp() {
                   onClick={() => {
                     setView("list");
                     setSearchOpen(false);
+                    setQuery("");
                   }}
                   className="flex w-full cursor-pointer items-center gap-3 rounded-[8px] px-2.5 py-2 text-left hover:bg-primary hover:text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
@@ -403,8 +436,8 @@ export default function StudyApp() {
                 </p>
               )}
             </div>
-          </div>
-        </div>
+          </DialogContent>
+        </Dialog>
       )}
     </TooltipProvider>
   );
@@ -416,6 +449,7 @@ function NavItem({
   active,
   count,
   onClick,
+  disabled,
   collapsed,
 }: {
   icon: ReactNode;
@@ -423,13 +457,17 @@ function NavItem({
   active?: boolean;
   count?: string;
   onClick?: () => void;
+  disabled?: boolean;
   collapsed?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
+      disabled={disabled}
       className={cn(
-        "flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-[8px] px-2 text-[12.5px] text-sidebar-foreground/80 transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&_svg]:size-4",
+        "flex h-8 w-full items-center gap-2.5 rounded-[8px] px-2 text-[12.5px] text-sidebar-foreground/80 transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&_svg]:size-4",
+        !disabled && "cursor-pointer",
+        disabled && "cursor-not-allowed opacity-45 hover:bg-transparent",
         active && "bg-primary text-primary-foreground hover:bg-primary",
         collapsed && "lg:w-9 lg:justify-center lg:px-0",
       )}
@@ -648,9 +686,11 @@ function TodayView({
                 <button
                   key={task.title}
                   onClick={() => toggleDone(task.title)}
+                  aria-pressed={checked}
                   className="flex w-full cursor-pointer items-start gap-3 border-b border-border/60 p-3 text-left transition-colors last:border-b-0 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                 >
                   <span
+                    aria-hidden="true"
                     className={cn(
                       "mt-0.5 grid size-[15px] shrink-0 place-items-center rounded-[5px] border transition-colors",
                       checked
@@ -705,58 +745,6 @@ function TodayView({
   );
 }
 
-const weekDays = ["Seg 22", "Ter 23", "Qua 24", "Qui 25", "Sex 26"];
-const calendarEvents = [
-  {
-    day: 0,
-    top: 45,
-    h: 70,
-    title: "Cálculo II",
-    sub: "Sala 204",
-    color: "border-chart-2/30 bg-chart-2/12 text-chart-2",
-  },
-  {
-    day: 1,
-    top: 115,
-    h: 70,
-    title: "Banco de Dados",
-    sub: "Sala 112",
-    color: "border-chart-1/30 bg-chart-1/12 text-chart-1",
-  },
-  {
-    day: 2,
-    top: 45,
-    h: 70,
-    title: "Estruturas de Dados",
-    sub: "Lab. 03",
-    color: "border-chart-3/30 bg-chart-3/12 text-chart-3",
-  },
-  {
-    day: 3,
-    top: 45,
-    h: 70,
-    title: "Cálculo II",
-    sub: "Sala 204",
-    color: "border-chart-2/30 bg-chart-2/12 text-chart-2",
-  },
-  {
-    day: 3,
-    top: 255,
-    h: 105,
-    title: "Estudo · Prova P1",
-    sub: "Biblioteca",
-    color: "border-chart-5/35 bg-chart-5/14 text-chart-5",
-  },
-  {
-    day: 4,
-    top: 115,
-    h: 70,
-    title: "Eng. de Software",
-    sub: "Sala 306",
-    color: "border-chart-5/30 bg-chart-5/12 text-chart-5",
-  },
-];
-
 function ViewSwitch({ active, setView }: { active: View; setView: (view: View) => void }) {
   const options: { key: View; label: string; icon: ReactNode }[] = [
     { key: "calendar", label: "Grade", icon: <CalendarDays className="size-3.5" /> },
@@ -788,90 +776,13 @@ function ViewSwitch({ active, setView }: { active: View; setView: (view: View) =
   );
 }
 
-function CalendarView({ setView }: { setView: (view: View) => void }) {
-  return (
-    <div className="p-4 sm:p-6">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-1.5">
-          <IconButton label="Semana anterior">
-            <ChevronLeft />
-          </IconButton>
-          <Button variant="outline" className="h-8 rounded-[8px] bg-card text-[12px]">
-            Hoje
-          </Button>
-          <IconButton label="Próxima semana">
-            <ChevronRight />
-          </IconButton>
-          <span className="ml-2 text-[13px] font-semibold">22 – 26 de setembro</span>
-        </div>
-        <ViewSwitch active="calendar" setView={setView} />
-      </div>
-      <Panel className="min-w-[760px]">
-        <div className="grid grid-cols-[72px_repeat(5,1fr)] border-b border-border/70 bg-muted/60">
-          <div className="border-r border-border/60" />
-          {weekDays.map((day) => (
-            <div
-              key={day}
-              className={cn(
-                "border-r border-border/60 py-2 text-center text-[11px] font-medium text-muted-foreground last:border-r-0",
-                day.includes("25") && "text-primary",
-              )}
-            >
-              {day}
-            </div>
-          ))}
-        </div>
-        <div className="relative grid h-[570px] grid-cols-[72px_repeat(5,1fr)]">
-          <div className="border-r border-border/60">
-            {["08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00"].map(
-              (time) => (
-                <div
-                  key={time}
-                  className="h-[70px] border-b border-border/50 pr-2 pt-1 text-right text-[10.5px] tabular-nums text-muted-foreground"
-                >
-                  {time}
-                </div>
-              ),
-            )}
-          </div>
-          {weekDays.map((day) => (
-            <div key={day} className="relative border-r border-border/60 last:border-r-0">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className="h-[70px] border-b border-border/50" />
-              ))}
-            </div>
-          ))}
-          {calendarEvents.map((event, index) => (
-            <div
-              key={index}
-              className={cn(
-                "absolute rounded-[8px] border px-2 py-1.5 backdrop-blur-sm",
-                event.color,
-              )}
-              style={{
-                left: `calc(72px + ${event.day} * ((100% - 72px) / 5) + 5px)`,
-                width: "calc((100% - 72px) / 5 - 10px)",
-                top: event.top,
-                height: event.h,
-              }}
-            >
-              <p className="truncate text-[11.5px] font-semibold">{event.title}</p>
-              <p className="mt-0.5 truncate text-[10px] opacity-75">{event.sub}</p>
-            </div>
-          ))}
-        </div>
-      </Panel>
-    </div>
-  );
-}
-
 const columns = [
-  { name: "A fazer", tone: "bg-muted-foreground", items: tasks.slice(2) },
+  { name: "A fazer", tone: "bg-muted-foreground", items: tasks.slice(2, 3) },
   { name: "Em andamento", tone: "bg-chart-5", items: tasks.slice(0, 2) },
   {
     name: "Em revisão",
     tone: "bg-chart-3",
-    items: [tasks[2] ?? tasks[0]].filter((task): task is Task => Boolean(task)),
+    items: tasks.slice(3, 4).filter((task): task is Task => Boolean(task)),
   },
   {
     name: "Concluído",
@@ -893,11 +804,15 @@ const columns = [
   },
 ];
 
+const kanbanTotal = columns.reduce((total, column) => total + column.items.length, 0);
+
 function KanbanView({ setView }: { setView: (view: View) => void }) {
   return (
     <div className="p-4 sm:p-6">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-[12px] text-muted-foreground">12 atividades · 4 nesta semana</p>
+        <p className="text-[12px] text-muted-foreground">
+          {kanbanTotal} atividades · {subjects.length} disciplinas
+        </p>
         <ViewSwitch active="kanban" setView={setView} />
       </div>
       <div className="grid min-w-[900px] grid-cols-4 gap-3">
@@ -912,10 +827,14 @@ function KanbanView({ setView }: { setView: (view: View) => void }) {
               <MoreHorizontal className="ml-auto size-4 text-muted-foreground" />
             </div>
             <div className="space-y-2">
-              {column.items.map((task, index) => (
+              {column.items.map((task) => (
                 <article
-                  key={`${task.title}-${index}`}
-                  className="shadow-float cursor-grab rounded-[9px] border border-border/70 bg-card p-3 transition-transform duration-150 hover:-translate-y-px"
+                  key={task.title}
+                  /* Realce por cor, não por elevating: `hover:-translate-y-px`
+                     promovia uma camada nova por quadro em 20 cards, e 1px de
+                     deslocamento é subliminar demais para justificar o custo
+                     (X7, X8). */
+                  className="shadow-float rounded-[9px] border border-border/70 bg-card p-3 transition-colors duration-150 hover:border-ring/60 hover:bg-accent/20"
                 >
                   <div className="flex items-center justify-between">
                     <span
@@ -948,6 +867,7 @@ function KanbanView({ setView }: { setView: (view: View) => void }) {
             </div>
             <Button
               variant="ghost"
+              disabled
               className="mt-2 h-8 w-full justify-start rounded-[8px] text-[12px] text-muted-foreground"
             >
               <Plus className="size-3.5" />
@@ -964,7 +884,9 @@ function ListView({ setView }: { setView: (view: View) => void }) {
   return (
     <div className="p-4 sm:p-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-[12px] text-muted-foreground">12 atividades em 4 disciplinas</p>
+        <p className="text-[12px] text-muted-foreground">
+          {tasks.length} atividades em {subjects.length} disciplinas
+        </p>
         <ViewSwitch active="list" setView={setView} />
       </div>
       <Panel className="overflow-x-auto">
@@ -980,9 +902,9 @@ function ListView({ setView }: { setView: (view: View) => void }) {
             </tr>
           </thead>
           <tbody>
-            {tasks.concat(tasks.slice(0, 2)).map((task, i) => (
+            {tasks.map((task) => (
               <tr
-                key={`${task.title}-${i}`}
+                key={task.title}
                 className="border-t border-border/60 transition-colors hover:bg-accent/40"
               >
                 <td className="px-4 py-2.5 text-[12.5px] font-medium">{task.title}</td>
@@ -1020,8 +942,49 @@ function ListView({ setView }: { setView: (view: View) => void }) {
   );
 }
 
+const subjectTabs = [
+  { key: "atividades", label: "Tarefas & trabalhos" },
+  { key: "notas", label: "Notas & média" },
+  { key: "anotacoes", label: "Anotações" },
+] as const;
+
+type SubjectTabKey = (typeof subjectTabs)[number]["key"];
+
 function SubjectView({ subject }: { subject: Subject }) {
-  const [tab, setTab] = useState("atividades");
+  const [tab, setTab] = useState<SubjectTabKey>("atividades");
+  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+
+  /**
+   * Padrão de tabs completo: setas movem a seleção, `Home`/`End` vão às pontas.
+   * O `aria-selected` sozinho não é acessível — sem `tabpanel` vinculado, um
+   * leitor de tela anuncia "aba" sem nunca dizer o que a aba contém.
+   */
+  const onTabKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    const step =
+      event.key === "ArrowRight"
+        ? 1
+        : event.key === "ArrowLeft"
+          ? -1
+          : event.key === "Home"
+            ? -99
+            : event.key === "End"
+              ? 99
+              : 0;
+    if (step === 0) return;
+    event.preventDefault();
+    const current = subjectTabs.findIndex((item) => item.key === tab);
+    const next =
+      step === -99
+        ? 0
+        : step === 99
+          ? subjectTabs.length - 1
+          : (current + step + subjectTabs.length) % subjectTabs.length;
+    const target = subjectTabs[next];
+    if (!target) return;
+    setTab(target.key);
+    tabRefs.current[target.key]?.focus();
+  };
+
   return (
     <div className="p-4 sm:p-6">
       <div className="mb-5 flex items-center gap-3">
@@ -1038,90 +1001,108 @@ function SubjectView({ subject }: { subject: Subject }) {
           <p className="text-[12px] text-muted-foreground">Prof. Marina Costa · Seg/Qui, 08:00</p>
         </div>
       </div>
-      <div className="mb-5 flex border-b border-border/70">
-        {[
-          ["atividades", "Tarefas & trabalhos"],
-          ["notas", "Notas & média"],
-          ["anotacoes", "Anotações"],
-        ].map(([key = "", label = ""]) => (
+      <div
+        className="mb-5 flex border-b border-border/70"
+        role="tablist"
+        aria-label="Seções da disciplina"
+      >
+        {subjectTabs.map((item) => (
           <button
-            key={key}
-            onClick={() => setTab(key)}
+            key={item.key}
+            ref={(node) => {
+              tabRefs.current[item.key] = node;
+            }}
+            id={`subject-tab-${item.key}`}
+            role="tab"
+            aria-selected={tab === item.key}
+            aria-controls={`subject-panel-${item.key}`}
+            // Só a aba ativa entra na ordem de tabulação; as outras são
+            // alcançadas pelas setas, que é o esperado para um tablist.
+            tabIndex={tab === item.key ? 0 : -1}
+            onKeyDown={onTabKeyDown}
+            onClick={() => setTab(item.key)}
             className={cn(
               "-mb-px cursor-pointer border-b-2 border-transparent px-3 py-2 text-[12.5px] text-muted-foreground transition-colors hover:text-foreground",
-              tab === key && "border-primary font-medium text-foreground",
+              tab === item.key && "border-primary font-medium text-foreground",
             )}
           >
-            {label}
+            {item.label}
           </button>
         ))}
       </div>
 
-      {tab === "atividades" && (
-        <div className="max-w-4xl">
-          <SectionTitle>Atividades da disciplina</SectionTitle>
-          <Panel>
-            {tasks.slice(0, 3).map((task) => (
-              <div
-                key={task.title}
-                className="flex items-center gap-3 border-b border-border/60 p-3 last:border-b-0"
-              >
-                <Circle className="size-4 text-muted-foreground" />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[12.5px] font-medium">{task.title}</p>
-                  <p className="text-[10.5px] tabular-nums text-muted-foreground">{task.date}</p>
+      <div
+        role="tabpanel"
+        id={`subject-panel-${tab}`}
+        aria-labelledby={`subject-tab-${tab}`}
+        tabIndex={0}
+      >
+        {tab === "atividades" && (
+          <div className="max-w-4xl">
+            <SectionTitle>Atividades da disciplina</SectionTitle>
+            <Panel>
+              {tasks.slice(0, 3).map((task) => (
+                <div
+                  key={task.title}
+                  className="flex items-center gap-3 border-b border-border/60 p-3 last:border-b-0"
+                >
+                  <Circle className="size-4 text-muted-foreground" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[12.5px] font-medium">{task.title}</p>
+                    <p className="text-[10.5px] tabular-nums text-muted-foreground">{task.date}</p>
+                  </div>
+                  <span className="rounded-[5px] bg-accent px-2 py-0.5 text-[10.5px] text-accent-foreground">
+                    {task.tag}
+                  </span>
                 </div>
-                <span className="rounded-[5px] bg-accent px-2 py-0.5 text-[10.5px] text-accent-foreground">
-                  {task.tag}
-                </span>
-              </div>
-            ))}
-          </Panel>
-        </div>
-      )}
-
-      {tab === "notas" && (
-        <div className="grid max-w-4xl gap-4 md:grid-cols-3">
-          <Metric label="Média atual" value="8,2" detail="Meta: 7,0" />
-          <Metric label="Frequência" value="92%" detail="6 de 20 faltas usadas" />
-          <Metric label="Próxima avaliação" value="P2" detail="08 de outubro" />
-          <Panel className="p-4 md:col-span-3">
-            <SectionTitle>Composição da média</SectionTitle>
-            {[
-              ["Lista 1", "9,0"],
-              ["Prova P1", "7,8"],
-              ["Projeto", "8,5"],
-            ].map(([name = "", grade = ""]) => (
-              <div
-                key={name}
-                className="flex items-center justify-between border-b border-border/60 py-2.5 last:border-b-0"
-              >
-                <span className="text-[12.5px]">{name}</span>
-                <span className="text-[14px] font-semibold tabular-nums">{grade}</span>
-              </div>
-            ))}
-          </Panel>
-        </div>
-      )}
-
-      {tab === "anotacoes" && (
-        <div className="grid max-w-4xl gap-3 md:grid-cols-2">
-          {[
-            "Integrais por partes",
-            "Métodos de substituição",
-            "Revisão para P1",
-            "Exercícios resolvidos",
-          ].map((note, i) => (
-            <Panel key={note} className="p-4">
-              <FileText className="size-4 text-muted-foreground" />
-              <h3 className="mt-6 text-[13.5px] font-semibold">{note}</h3>
-              <p className="mt-1 text-[11.5px] text-muted-foreground">
-                Aula {12 - i} · atualizado há {i + 1} dias
-              </p>
+              ))}
             </Panel>
-          ))}
-        </div>
-      )}
+          </div>
+        )}
+
+        {tab === "notas" && (
+          <div className="grid max-w-4xl gap-4 md:grid-cols-3">
+            <Metric label="Média atual" value="8,2" detail="Meta: 7,0" />
+            <Metric label="Frequência" value="92%" detail="6 de 20 faltas usadas" />
+            <Metric label="Próxima avaliação" value="P2" detail="08 de outubro" />
+            <Panel className="p-4 md:col-span-3">
+              <SectionTitle>Composição da média</SectionTitle>
+              {[
+                ["Lista 1", "9,0"],
+                ["Prova P1", "7,8"],
+                ["Projeto", "8,5"],
+              ].map(([name = "", grade = ""]) => (
+                <div
+                  key={name}
+                  className="flex items-center justify-between border-b border-border/60 py-2.5 last:border-b-0"
+                >
+                  <span className="text-[12.5px]">{name}</span>
+                  <span className="text-[14px] font-semibold tabular-nums">{grade}</span>
+                </div>
+              ))}
+            </Panel>
+          </div>
+        )}
+
+        {tab === "anotacoes" && (
+          <div className="grid max-w-4xl gap-3 md:grid-cols-2">
+            {[
+              "Integrais por partes",
+              "Métodos de substituição",
+              "Revisão para P1",
+              "Exercícios resolvidos",
+            ].map((note, i) => (
+              <Panel key={note} className="p-4">
+                <FileText className="size-4 text-muted-foreground" />
+                <h3 className="mt-6 text-[13.5px] font-semibold">{note}</h3>
+                <p className="mt-1 text-[11.5px] text-muted-foreground">
+                  Aula {12 - i} · atualizado há {i + 1} dias
+                </p>
+              </Panel>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

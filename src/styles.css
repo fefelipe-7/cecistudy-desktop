@@ -60,10 +60,53 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+
+  /* ── Motion ────────────────────────────────────────────────────────────────
+     Regra: mudança de estado vive em 150 ou 200 (DESIGN.md:25).
+     90ms e abaixo são resposta a gesto, não mudança de estado.
+     Acima de 200ms só rearranjo de layout e superfície em tela cheia, e cada uso
+     passa por revisão. A escala cresce com a distância percorrida e a área
+     atravessada, nunca com o nome do componente.                               */
+  --duration-micro: 90ms; /* resposta a gesto: :active, :focus-visible entrando */
+  --duration-small: 150ms; /* padrão de mudança de estado no lugar */
+  --duration-medium: 200ms; /* padrão de entrada/saída de superfície */
+  --duration-large: 280ms; /* rearranjo/FLIP e painel que ocupa uma coluna */
+  --duration-xlarge: 400ms; /* reservado: uma superfície cobrindo a janela */
+
+  /* ── Curvas ────────────────────────────────────────────────────────────────
+     A curva é escolhida pelo TIPO de movimento, nunca pelo gosto do dia.
+     standard : mudança de estado no lugar (cor, borda, opacidade)
+     entrance : o que entra (decelera)
+     exit     : o que sai (acelera)
+     spatial  : o que muda de lugar — monotônica, SEM overshoot
+     linear   : varredura e progresso (honestidade, não estilização)             */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-entrance: cubic-bezier(0, 0, 0.2, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  /* Monotônica de propósito: `ease-spatial` com overshoot mostraria 14:52 antes
+     de 15:00 numa grade com encaixe de 15 min (D15). */
+  --ease-spatial: cubic-bezier(0.2, 0, 0, 1);
+  --ease-linear: linear;
 }
 
 :root {
   --radius: 0.5rem;
+
+  /* Um único override corrige o Radix inteiro sem editar quatro arquivos do set
+     curado (AGENTS.md:12). O `tw-animate-css` lê `var(--tw-duration, .15s)` e
+     `var(--tw-ease, ease)`: declarar aqui faz todo `animate-in`/`animate-out` do
+     set passar a 200ms com curva de entrada, e nenhum template é tocado. */
+  --tw-duration: var(--duration-medium);
+  --tw-ease: var(--ease-entrance);
+
+  /* Fundo **opaco** para elemento `sticky` dentro de container rolável. Existe
+     para substituir `backdrop-blur` na grade: um `backdrop-filter` obriga
+     re-amostragem da região por trás a CADA quadro de rolagem, e o conteúdo por
+     atrás da grade é o pior padrão possível para um borrão (bordas de 1px em
+     1008px de altura). A 2% de foreground a diferença visual é imperceptível e
+     o custo por quadro vai a zero. */
+  --surface-raised: color-mix(in oklab, var(--popover) 98%, var(--foreground));
+
   --card: oklch(0.975 0.008 325.6);
   --ring: oklch(0.592 0.218 0.6);
   --input: oklch(0.852 0.056 336.6);
@@ -165,13 +208,59 @@
   }
 }
 
+/*
+ * Movimento reduzido, em três níveis.
+ *
+ * A regra não é "desligar tudo": desligar o cross-fade entre modos troca uma
+ * transição por um **flash**, que é pior para a mesma pessoa que pediu menos
+ * movimento. Então:
+ *
+ *   nível 1 — desliga: movimento repetido ou espacial (shimmer, `animate-pulse`,
+ *            `hover:-translate-y-px`, `zoom-in`, `slide-in-from-*`). A correção
+ *            preferida é o keyframe viver dentro de `no-preference`, para que o
+ *            estado estático venha junto — não um reset global.
+ *   nível 2 — depara: some o deslocamento, fica opacidade de 90ms.
+ *   nível 3 — preserva: cor de hover/foco (cor não é movimento), cross-fade entre
+ *            modos e o anel de foco (WCAG 2.4.7 — é o único indicador de onde o
+ *            teclado está).
+ *
+ * `transition-duration: 0.01ms` sozinho NÃO alcança WAAPI, `startViewTransition`
+ * nem timers: para código JS existe `src/hooks/use-reduced-motion.ts`.
+ */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     scroll-behavior: auto !important;
     animation-duration: 0.01ms !important;
+    /* Sem isto, `0.01ms` + `infinite` = strobe. É WCAG 2.3.1 (Level A). */
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* Vidro em fundo de janela que a usuária pediu para não ter. */
+@media (prefers-reduced-transparency: reduce) {
+  .vibrancy,
+  .scrim {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .vibrancy {
+    background: var(--sidebar);
+  }
+
+  .scrim {
+    background: color-mix(in oklab, var(--foreground) 25%, transparent);
+  }
+}
+
+/* Contraste pedido: a espessura da borda sobe, e a cor de quem está atrasado. */
+@media (prefers-contrast: more) {
+  .day-column,
+  .grid-scroll {
+    --color-border: color-mix(in oklab, var(--foreground) 55%, transparent);
   }
 }
 
@@ -201,5 +290,180 @@
   }
   &::-webkit-scrollbar-track {
     background: transparent;
+  }
+}
+
+/*
+ * O container de rolagem da grade.
+ *
+ * `overscroll-behavior: contain` é o que impede a rolagem encadeada: sem ele,
+ * chegar ao fim da grade faz a **página** pular atrás dela, e num app de janela
+ * única isso parece um travamento. `scroll-margin-top` reserva a altura do
+ * cabeçalho fixo para que `scrollIntoView` de um item não o empurre para baixo
+ * do cabeçalho (S-05, F5).
+ */
+@utility grid-scroll {
+  overscroll-behavior: contain;
+  scroll-margin-top: 44px;
+
+  /* O fundo é opaco e opaco de verdade: este container é a superfície que fica
+     por trás dos dois `sticky` da grade. */
+  background: var(--popover);
+}
+
+/*
+ * Coluna de dia da Semana.
+ *
+ * `content-visibility: auto` deixa o navegador pular layout e paint das colunas
+ * que estão fora da vista, e `contain-intrinsic-size` diz quanto espaço reservar
+ * enquanto isso — sem ele, a barra de rolagem "dança" a cada quadro conforme as
+ * colunas entram e saem, que é pior do que o custo que se queria evitar.
+ *
+ * O fallback `contain: layout paint` vale para o caso de o navegador não suportar
+ * `content-visibility`: o isolamento continua correto, só não há o pulo.
+ */
+@utility day-column {
+  content-visibility: auto;
+  contain-intrinsic-size: auto var(--day-column-intrinsic, 1008px);
+  contain: layout paint;
+}
+
+/*
+ * Varredura do esqueleto de carregamento.
+ *
+ * Mora dentro de `no-preference` de propósito: o preenchimento estático — que é o
+ * que quem pediu menos movimento deve receber — vem por exclusão, e não por uma
+ * regra de reset que poderia ser sobreposta. `linear` porque uma varredura com
+ * aceleração mente sobre a taxa em que ela se repete.
+ */
+.skeleton-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklab, var(--foreground) 6%, transparent) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .skeleton-shimmer::after {
+    animation: skeleton-sweep 1.4s var(--ease-linear) infinite;
+  }
+}
+
+@keyframes skeleton-sweep {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/*
+ * Scrim do modal lateral no mobile.
+ *
+ * Nome próprio porque `prefers-reduced-transparency` precisa alcançá-lo, e um
+ * `backdrop-blur` escrito direto na classe utilitária não é alcançável por
+ * seletivo de classe sem brittle.
+ */
+@utility scrim {
+  backdrop-filter: blur(1px);
+  -webkit-backdrop-filter: blur(1px);
+}
+
+/* ── Vocabulário de motion ────────────────────────────────────────────────────
+   `styles.css` é o ÚNICO lugar onde se decide duração e curva (DM8): os
+   componentes do set curado não escrevem literal, e o Radix herda dos tokens de
+   `:root`. Estas utilities são o outro lado dessa regra — o nome descreve o
+   **gesto**, e o token decide o tempo.                                              */
+
+/* Superfície que entra e sai: `Dialog`, `Popover`, `Select`, `Tooltip`. */
+@utility motion-surface {
+  transition:
+    opacity var(--duration-medium) var(--ease-entrance),
+    transform var(--duration-medium) var(--ease-entrance),
+    scale var(--duration-medium) var(--ease-entrance);
+}
+
+/* O mesmo elemento fechando: **mais curto** que a entrada. A assimetria vem da
+   duração, não da curva — `DESIGN.md:25` dá o mesmo teto para as duas. */
+@utility motion-surface-closed {
+  transition:
+    opacity var(--duration-small) var(--ease-exit),
+    transform var(--duration-small) var(--ease-exit),
+    scale var(--duration-small) var(--ease-exit);
+}
+
+/* Mudança de estado no lugar: cor, borda, opacidade. Nada de deslocamento. */
+@utility motion-state {
+  transition-duration: var(--duration-small);
+  transition-timing-function: var(--ease-standard);
+  transition-property: color, background-color, border-color, opacity, box-shadow;
+}
+
+/* Troca de modo de visualização: a grade entra inteira e de uma vez. Sem cascade,
+   sem stagger — com 7 colunas o stagger vira segundo. */
+@utility motion-cross-fade {
+  animation: cross-fade-in var(--duration-medium) var(--ease-entrance) both;
+}
+
+/* Item que entra na grade. Sem JS: `@starting-style` + `allow-discrete`. */
+@utility motion-item {
+  opacity: 1;
+  translate: 0 0;
+  transition:
+    opacity var(--duration-medium) var(--ease-entrance),
+    translate var(--duration-medium) var(--ease-entrance);
+}
+
+@starting-style {
+  .motion-item {
+    opacity: 0;
+    translate: 0 -2px;
+  }
+}
+
+/* Resposta a gesto — 90ms, porque não é mudança de estado. */
+@utility motion-gesture {
+  transition-duration: var(--duration-micro);
+  transition-timing-function: var(--ease-standard);
+  transition-property: color, background-color, border-color, opacity;
+}
+
+/* Rearranjo/FLIP e painel que ocupa uma coluna. Curva monotônica: overshoot
+   mostraria 14:52 antes de 15:00 numa grade com encaixe de 15 min (D15). */
+@utility motion-spatial {
+  transition-duration: var(--duration-large);
+  transition-timing-function: var(--ease-spatial);
+  transition-property: transform;
+}
+
+@keyframes cross-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Sob `reduce`, o cross-fade entre modos é **preservado** (DM6 nível 3): sem ele a
+   troca de modo vira flash. O que sai é o deslocamento espacial. */
+@media (prefers-reduced-motion: reduce) {
+  .motion-cross-fade {
+    animation-duration: var(--duration-micro);
+    animation-timing-function: linear;
+  }
+
+  .motion-item {
+    translate: none;
+    transition-property: opacity;
+    transition-duration: var(--duration-micro);
+    transition-timing-function: linear;
   }
 }
