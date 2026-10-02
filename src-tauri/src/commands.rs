@@ -27,10 +27,18 @@
 //! - **D12** — `execution_record` não tem FK para o alvo e nenhum comando de
 //!   deleção o apaga.
 //!
-//! A máquina de estados **não** é reimplementada aqui: ela é
-//! `domain/state-machine.ts`. O `CHECK` do banco só impede valor fora da
-//! enumeração, não uma transição ilegal — quem valida a transição é o
-//! TypeScript, antes de chamar este arquivo.
+//! A máquina de estados é imposta **aqui**, em [`ITEM_TRANSITIONS`] +
+//! [`guard_transition`], no caminho de escrita. O `CHECK` do banco só impede
+//! valor fora da enumeração, não uma transição ilegal.
+//!
+//! Antes desta tabela, o comentário aqui dizia que "quem valida a transição é o
+//! TypeScript, antes de chamar este arquivo". Esse "antes" não existia: a
+//! validação estava só em `domain/state-machine.ts` e só dentro do próprio
+//! teste, sem chamador de produção — então `dispensado → concluido` e
+//! `concluido → planejado` eram graváveis. `domain/state-machine.ts` continua
+//! existindo como **espelho**, para a UI decidir o que oferecer e para rodar
+//! teste sem o toolchain Rust; quando os dois divergem, este arquivo está
+//! certo.
 
 use rusqlite::{OptionalExtension, Transaction, params};
 use serde::{Deserialize, Serialize};
@@ -965,6 +973,108 @@ fn read_occurrence(tx: &Transaction<'_>, occurrence_id: &str) -> Result<Occurren
     )?)
 }
 
+/// Tabela de transições de item — a **fonte** desta regra (`§3.1` da spec
+/// `01-dominio-persistencia.md`, espelhada em `domain/state-machine.ts`).
+///
+/// O `CHECK` do banco só impede valor fora da enumeração; ele **não** impede
+/// `concluido → cancelado`. Antes desta tabela, a validação existia só em
+/// TypeScript e só dentro do próprio teste — nenhum caminho de escrita a
+/// consultava, então `dispensado → concluido` e `concluido → planejado` eram
+/// graváveis de ponta a ponta.
+///
+/// A lista de `to` é **fechada**. `cancelado` e `dispensado` não são finais:
+/// §4 diz que `cancelado` é alteração externa e `dispensado` é decisão da usuária
+/// que ela pode rever, e por isso ambos voltam para `planejado`.
+///
+/// Vale para `responsibility`, `event_occurrence` e `calendar_event`, que
+/// compartilham a enumeração de 7 estados. `plan_block` tem 4 estados e a spec
+/// **não** define transições próprias; em vez de inventar uma tabela, ele
+/// obedece esta, restrita aos seus próprios estados. É a direção restritiva:
+/// onde a spec cala, o código recusa em vez de permitir.
+const ITEM_TRANSITIONS: [(&str, &[&str]); 7] = [
+    (
+        "planejado",
+        &[
+            "em_andamento",
+            "concluido",
+            "adiado",
+            "nao_realizado",
+            "cancelado",
+            "dispensado",
+        ],
+    ),
+    (
+        "em_andamento",
+        &[
+            "concluido",
+            "adiado",
+            "nao_realizado",
+            "cancelado",
+            "dispensado",
+        ],
+    ),
+    (
+        "adiado",
+        &[
+            "planejado",
+            "em_andamento",
+            "concluido",
+            "nao_realizado",
+            "cancelado",
+            "dispensado",
+        ],
+    ),
+    (
+        "nao_realizado",
+        &[
+            "planejado",
+            "em_andamento",
+            "concluido",
+            "adiado",
+            "cancelado",
+            "dispensado",
+        ],
+    ),
+    ("concluido", &["em_andamento"]),
+    ("cancelado", &["planejado"]),
+    ("dispensado", &["planejado"]),
+];
+
+/// `true` quando `from → to` é uma transição da tabela. Transição para o mesmo
+/// estado é tratada como **ilegal**: `§3.1` fecha a lista e não inclui a
+/// identidade, então "marcar concluído duas vezes" não é transição.
+fn transition_allowed(from: &str, to: &str) -> bool {
+    ITEM_TRANSITIONS
+        .iter()
+        .find(|(state, _)| *state == from)
+        .is_some_and(|(_, allowed)| allowed.contains(&to))
+}
+
+/// Lê o estado atual de uma tabela da família de itens e recusa a transição se
+/// a tabela de `§3.1` não permitir.
+///
+/// `table` vem sempre de uma correspondência fechada sobre literais, nunca de
+/// entrada do usuário — é a mesma garantia de `insert_execution`.
+fn guard_transition(tx: &Transaction<'_>, table: &str, id: &str, to: &str) -> Result<(), DbError> {
+    let from: Option<String> = tx
+        .query_row(
+            &format!("SELECT state FROM {table} WHERE id = ?1"),
+            params![id],
+            |r| r.get(0),
+        )
+        .optional()?;
+    // Alvo inexistente não é transição: quem valida a existência é o chamador.
+    let Some(from) = from else {
+        return Ok(());
+    };
+    if !transition_allowed(&from, to) {
+        return Err(DbError::Domain(format!(
+            "transição não permitida: {from} → {to} (§3.1)"
+        )));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetOccurrenceState {
@@ -982,6 +1092,9 @@ pub fn set_occurrence_state_core(
     let now = now_ms()?;
     let cancelled = payload.state == "cancelado";
     db.write(|tx| {
+        // §3.1: a transição é conferida **antes** de gravar, no mesmo
+        // transaction. Antes não era conferida em lugar nenhum.
+        guard_transition(tx, "event_occurrence", &payload.id, &payload.state)?;
         tx.execute(
             "UPDATE event_occurrence
              SET state = ?2,
@@ -1553,6 +1666,9 @@ fn insert_execution(
             )));
         }
     };
+    // §3.1 antes do `UPDATE`: sem isto, `complete_item` num item já
+    // `dispensado` gravava `concluido`, porque nada lia o estado atual.
+    guard_transition(tx, table, &target.id, next_state)?;
     let sql = format!("UPDATE {table} SET state = ?1 WHERE id = ?2");
     let affected = tx.execute(&sql, params![next_state, target.id])?;
     if affected == 0 && target.kind == "event" {
@@ -1801,6 +1917,153 @@ mod tests {
             err.to_string().to_lowercase().contains("freq"),
             "a mensagem cita FREQ: {err}"
         );
+    }
+
+    /// Cria uma responsabilidade já no estado pedido, para exercitar a transição
+    /// a partir dele.
+    fn responsibility_em(estado: &str) -> (Db, Responsibility) {
+        let db = Db::open_in_memory().expect("banco");
+        let mut payload = responsibility_payload("Ler");
+        payload.state = Some(estado.to_string());
+        let resp = create_responsibility_core(&db, payload).expect("cria");
+        (db, resp)
+    }
+
+    fn concludes(db: &Db, id: &str) -> Result<(), DbError> {
+        complete_item_core(
+            db,
+            CompleteItem {
+                target: Target {
+                    kind: "responsibility".into(),
+                    id: id.into(),
+                },
+                record: Some(execution(T0 + HOUR)),
+            },
+        )
+    }
+
+    /// Débito C5: a tabela de transições vivia só em `domain/state-machine.ts`
+    /// e só dentro do próprio teste. Nenhum caminho de escrita a consultava, e o
+    /// comentário do módulo afirmava que o TypeScript validava "antes de chamar
+    /// este arquivo" — o que não acontecia. Estas Transitões eram graváveis.
+    #[test]
+    fn transicao_ilegal_e_recusada_na_escrita() {
+        // `dispensado` só pode voltar para `planejado`.
+        let (db, resp) = responsibility_em("dispensado");
+        let err = concludes(&db, &resp.id).expect_err("dispensado → concluido é ilegal");
+        assert!(
+            err.to_string().contains("transição não permitida"),
+            "a mensagem nomeia a regra: {err}"
+        );
+        // E o estado não mudou — a recusa acontece antes do UPDATE.
+        let atual: String = db
+            .conn()
+            .unwrap()
+            .query_row(
+                "SELECT state FROM responsibility WHERE id = ?1",
+                params![resp.id],
+                |r| r.get(0),
+            )
+            .expect("lê estado");
+        assert_eq!(atual, "dispensado", "a recusa não gravou nada");
+    }
+
+    #[test]
+    fn concluir_depois_de_concluido_e_ilegal() {
+        // `concluido` só pode ir para `em_andamento` (reabrir).
+        let (db, resp) = responsibility_em("concluido");
+        concludes(&db, &resp.id).expect_err("concluido → concluido não é transição");
+    }
+
+    #[test]
+    fn concluir_de_planejado_e_permitido() {
+        let (db, resp) = responsibility_em("planejado");
+        concludes(&db, &resp.id).expect("planejado → concluido é legal");
+        let atual: String = db
+            .conn()
+            .unwrap()
+            .query_row(
+                "SELECT state FROM responsibility WHERE id = ?1",
+                params![resp.id],
+                |r| r.get(0),
+            )
+            .expect("lê estado");
+        assert_eq!(atual, "concluido");
+    }
+
+    #[test]
+    fn reabrir_concluido_via_ocorrencia_e_permitido() {
+        // `concluido → em_andamento` é a única saída de `concluido`.
+        assert!(transition_allowed("concluido", "em_andamento"));
+        assert!(!transition_allowed("concluido", "cancelado"));
+        assert!(!transition_allowed("concluido", "dispensado"));
+    }
+
+    #[test]
+    fn cancelar_e_reativar_ocorrencia_obedece_a_tabela() {
+        let db = Db::open_in_memory().expect("banco");
+        let evt = create_event_core(&db, event_payload("Aula")).expect("cria");
+        db.write(|tx| {
+            tx.execute(
+                "INSERT INTO event_occurrence
+                   (id, event_id, original_start, starts_at, ends_at, state, override,
+                    created_at, updated_at)
+                 VALUES ('occ-1', ?1, ?2, ?2, ?3, 'planejado', 'none', ?2, ?2)",
+                params![evt.id, T0, T0 + HOUR],
+            )?;
+            Ok(())
+        })
+        .expect("prepara");
+
+        set_occurrence_state_core(
+            &db,
+            SetOccurrenceState {
+                id: "occ-1".into(),
+                state: "cancelado".into(),
+                reason: None,
+            },
+        )
+        .expect("planejado → cancelado é legal");
+
+        // `cancelado → concluido` não está na tabela.
+        let err = set_occurrence_state_core(
+            &db,
+            SetOccurrenceState {
+                id: "occ-1".into(),
+                state: "concluido".into(),
+                reason: None,
+            },
+        )
+        .expect_err("cancelado → concluido é ilegal");
+        assert!(err.to_string().contains("transição não permitida"));
+    }
+
+    #[test]
+    fn a_tabela_espelha_a_spec_de_tres_ponto_um() {
+        // 7 linhas, como a spec `01-dominio-persistencia.md` §3.1.
+        assert_eq!(ITEM_TRANSITIONS.len(), 7);
+        // `cancelado` e `dispensado` não são finais (revisáveis).
+        assert_eq!(
+            ITEM_TRANSITIONS
+                .iter()
+                .find(|(s, _)| *s == "cancelado")
+                .map(|(_, to)| *to),
+            Some(&["planejado"][..])
+        );
+        // Nenhum estado transiciona para si mesmo, e todo destino é um estado que
+        // existe na tabela — a lista é fechada nos dois sentidos.
+        for (from, to) in &ITEM_TRANSITIONS {
+            assert!(
+                !transition_allowed(from, from),
+                "{from} → {from} não pode ser transição"
+            );
+            for destino in *to {
+                assert!(
+                    ITEM_TRANSITIONS.iter().any(|(estado, _)| estado == destino),
+                    "{from} → {destino}: destino fora da tabela"
+                );
+            }
+        }
     }
 
     fn event_payload(title: &str) -> UpsertEvent {

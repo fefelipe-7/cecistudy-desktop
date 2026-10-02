@@ -10,6 +10,19 @@ interface TransitionRow {
  * diagrama: nada mais é permitido, e nada aqui é final. `cancelado` e `dispensado`
  * voltam para `planejado` porque §4 os descreve como alteração externa e decisão
  * revisável, não como fim. Remover a **regra** de um item não é transição, é exclusão.
+ *
+ * ⚠️ **Este arquivo é um espelho, não a fonte.** A regra é imposta em
+ * `src-tauri/src/commands.rs` (`ITEM_TRANSITIONS` + `guard_transition`), no
+ * caminho de escrita — é lá que uma transição ilegal é recusada. Aqui ela vive
+ * para a **UI decidir o que oferecer** e para rodar teste sem o toolchain Rust.
+ * Quando os dois divergirem, o Rust está certo e este arquivo é o bug.
+ *
+ * Antes de 2026-10-02 esta era a única implementação, e ela não validava
+ * nada: não tinha chamador de produção, e o comentário do módulo Rust afirmava
+ * que "quem valida a transição é o TypeScript, antes de chamar este arquivo" —
+ * um "antes" que não existia. Transições ilegais eram graváveis de ponta a ponta.
+ *
+ * A lista abaixo e a do Rust têm de continuar idênticas.
  */
 const TRANSITIONS: readonly TransitionRow[] = [
   {

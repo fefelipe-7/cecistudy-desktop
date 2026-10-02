@@ -124,11 +124,11 @@ Consequência: entidade `BlockSuggestion` com `state: "pendente" | "aceita" | "r
 
 ### 2.2 Decisões de arquitetura (não deriváveis do código)
 
-**A1 — Onde vive a verdade: TypeScript.**
-Decisão: a **verdade do domínio é TypeScript** (regras, recorrência, estados, atraso, conflito, mapeamentos). Rust é **armazenamento, rede e SO**, sem regra de negócio.
-Justificativa: (a) a máquina de estados de §4, o motor de recorrência de §5 e o cálculo de conflito de D7 exigem teste unitário rápido, e o toolchain Rust está **bloqueado nesta máquina** (`SPEC.md:10`) — cada iteração passaria a depender de um compilador que não roda; (b) o único estado que existe hoje é `useState` (`src/App.tsx:125-130`), ou seja, o front-end já é dono do estado observável; (c) §10 exige duas versões do mesmo item em conflito, e comparar/mergear JSON em Rust duplicaria a tipagem.
+**A1 — Onde vive a verdade: TypeScript.** ⚠️ **SUBSTITUÍDA — não use esta seção como regra.** A decisão real é o inverso: a verdade do domínio é **Rust** (`src-tauri/`), e TypeScript é espelho para render e para teste sem toolchain. Ver `01-dominio-persistencia.md` §4.3 (registrou a inversão) e o ADR-006 do grupo. O texto abaixo fica como registro do que se pensava em 2026-09, e a **justificativa é a que caiu**: o toolchain Rust não rodava nesta máquina, o que hoje é falso (`npm run test:rust` e `npm run fmt:rust` estão no CI). Enquanto ele não rodava, a consequência "sem `Date` direto, `Clock` injetado" era o que mantinha as regras testáveis — essa parte continua válida e é a base do gate de fronteiras.
+Decisão original (verrada em 2026-09, invertida depois): a **verdade do domínio é TypeScript** (regras, recorrência, estados, atraso, conflito, mapeamentos). Rust é **armazenamento, rede e SO**, sem regra de negócio.
+Justificativa original: (a) a máquina de estados de §4, o motor de recorrência de §5 e o cálculo de conflito de D7 exigem teste unitário rápido, e o toolchain Rust está **bloqueado nesta máquina** (`SPEC.md:10`) — cada iteração passaria a depender de um compilador que não roda; (b) o único estado que existe hoje é `useState` (`src/App.tsx:125-130`), ou seja, o front-end já é dono do estado observável; (c) §10 exige duas versões do mesmo item em conflito, e comparar/mergear JSON em Rust duplicaria a tipagem.
 Alternativa rejeitada: domínio em Rust (testes em `cargo test`, que não rodam aqui); híbrido com regras nos dois lados (duas implementações da verdade).
-Consequência: `src/features/calendar/domain/**` é TypeScript puro — sem React, sem `invoke`, sem `Date` direto (usa um `Clock` injetado), testável com `node --test` sem Tauri.
+Consequência original: `src/features/calendar/domain/**` é TypeScript puro — sem React, sem `invoke`, sem `Date` direto (usa um `Clock` injetado), testável com `node --test` sem Tauri. **Esta consequência permanece e é o que `scripts/check-boundaries.mjs` verifica.**
 
 **A2 — Persistência: SQLite em Rust, exposto por `#[tauri::command]` de domínio.**
 Decisão: arquivo SQLite gerenciado pelo Rust via `rusqlite` (feature `bundled`), com migrações versionadas. Rust expõe comandos **de domínio, não de SQL genérico** (ex.: `list_events_in_window`, `move_occurrence`), cada um dentro de uma transação.
@@ -136,11 +136,11 @@ Justificativa: o modelo tem exceção por ocorrência (`UNIQUE(event_id, origina
 Alternativa rejeitada: `tauri-plugin-store` / JSON (sem transação, sem consulta por janela temporal); `sql.js` no front-end (recarrega o banco inteiro a cada launch e exige WASM).
 Consequência: `rusqlite` com `bundled` **exige compilador C**, o que reforça o bloqueio de MSVC (§3). Nenhum comando aceita SQL arbitrário vindo do JS.
 
-**A3 — Recorrência: `rrule` em JavaScript (RFC 5545).**
-Decisão: a regra é uma **string RRULE** persistida; a expansão para instantes é feita em TypeScript com o pacote `rrule`. Rust não conhece recorrência.
-Justificativa: o Google Calendar fala RRULE — a mesma string serializa para os dois lados, sem camada de tradução (spec 05) — e o parser fica testável sem cargo (A1).
+**A3 — Recorrência: `rrule` em JavaScript (RFC 5545).** ⚠️ **SUBSTITUÍDA — não use esta seção como regra.** Hoje a materialização vive em `src-tauri/src/commands.rs` (`expand_rule`, `matches_freq`), dentro da transação da leitura. `rrule` continua em TypeScript, mas como **espelho** (`domain/recurrence.ts`), e os dois já divergiram: o subconjunto de 6 chaves em Rust engole `FREQ=MONTHLY` e tratava `FREQ=WEEKLY` sem `BYDAY` como série diária. Isso foi corrigido em 2026-10 e coberto por teste dos dois lados — mas o espelho segue sendo o item a observar.
+Decisão original: a regra é uma **string RRULE** persistida; a expansão para instantes é feita em TypeScript com o pacote `rrule`. Rust não conhece recorrência.
+Justificativa original: o Google Calendar fala RRULE — a mesma string serializa para os dois lados, sem camada de tradução (spec 05) — e o parser fica testável sem cargo (A1).
 Alternativa rejeitada: `chrono` + `rrule` em Rust (duplicaria a lógica em duas linguagens e colocaria o bloqueio de MSVC no caminho crítico da entrega 4 de §11).
-Consequência: `rrule` reintroduzida conscientemente (removida em `SPEC.md:322`). A expansão é limitada a uma janela (visível ± 1 semana) e materializada em `event_occurrence` sob demanda.
+Consequência original: `rrule` reintroduzida conscientemente (removida em `SPEC.md:322`). A expansão é limitada a uma janela (visível ± 1 semana) e materializada em `event_occurrence` sob demanda. **A materialização em Rust foi adicionada depois, como 20º comando — ver `01-dominio-persistencia.md` §4.3.**
 
 **A4 — Drag-and-drop: eventos de ponteiro próprios.**
 Decisão: sem biblioteca. Hook `useGridDrag` sobre `pointerdown` / `pointermove` / `pointerup` com `setPointerCapture`, snap de 15 minutos e duas alças de resize (borda superior e inferior).

@@ -124,7 +124,11 @@ Transições permitidas (a seta "→" significa "permitido"; nada mais é):
 
 Não há transição **de/para** lugar nenhum a partir de um estado que não está nesta lista. `cancelado` e `dispensado` não são finais: §4 diz que `cancelado` é "alteração externa" e `dispensado` é uma decisão da usuária que ela pode rever. §4 também implica que não há caminho de volta para um item cuja **regra** foi removida — isso é exclusão, não transição.
 
-**Aceite e teste:** `npm run typecheck` → 0; teste unitário `assert(transitionAllowed("planejado","concluido"))` e `assert(!transitionAllowed("concluido","cancelado"))`; `rg "from:" src/features/calendar/domain/state-machine.ts` retorna exatamente as 7 linhas da tabela.
+**Aceite e teste:** a **fonte** da tabela é `ITEM_TRANSITIONS` em `src-tauri/src/commands.rs`, e a guarda é `guard_transition`, chamada em `insert_execution` e em `set_occurrence_state_core` — a transição é conferida dentro da mesma transação da gravação, e a recusa acontece antes do `UPDATE`. Espelho em `domain/state-machine.ts`, para a UI decidir o que oferecer.
+
+Comandos: `npm run typecheck` → 0; `npm run test` inclui `src/lib/__tests__/stateMachineParity.test.ts`, que lê a constante do Rust direto do fonte e compara com o espelho par a par; `npm run test:rust` cobre `transicao_ilegal_e_recusada_na_escrita` (a recusa não grava), `concluir_depois_de_concluido_e_ilegal`, `cancelar_e_reativar_ocorrencia_obedece_a_tabela` e `a_tabela_espelha_a_spec_de_tres_ponto_um`.
+
+⚠️ **Correção de 2026-10-02.** Esta seção era o critério de aceite original, e ele apontava para `state-machine.ts` com "a TypeScript valida antes". Isso nunca existiu: a tabela não tinha chamador de produção, e o comentário do módulo Rust afirmava uma validação que não estava lá. `dispensado → concluido` e `concluido → planejado` eram graváveis de ponta a ponta. O texto antigo ficou acima por registro; o que vale é a implementação em Rust.
 
 ### 3.2 Entidades
 
