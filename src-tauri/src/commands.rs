@@ -32,7 +32,7 @@
 //! enumeração, não uma transição ilegal — quem valida a transição é o
 //! TypeScript, antes de chamar este arquivo.
 
-use rusqlite::{params, OptionalExtension, Transaction};
+use rusqlite::{OptionalExtension, Transaction, params};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -61,7 +61,8 @@ fn now_ms() -> Result<i64, DbError> {
     let ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|e| DbError::Domain(format!("relógio antes da época Unix: {e}")))?;
-    i64::try_from(ms.as_millis()).map_err(|_| DbError::Domain("instante fora do range de i64".into()))
+    i64::try_from(ms.as_millis())
+        .map_err(|_| DbError::Domain("instante fora do range de i64".into()))
 }
 
 /// INV-6: `google` é leitura. A camada de binding nunca envia isso; mesmo que
@@ -114,7 +115,8 @@ pub struct Layer {
 
 pub fn list_layers_core(db: &Db) -> Result<Vec<Layer>, DbError> {
     let conn = db.conn()?;
-    let mut stmt = conn.prepare("SELECT id, title, tone, icon, visible, position FROM layer ORDER BY position")?;
+    let mut stmt = conn
+        .prepare("SELECT id, title, tone, icon, visible, position FROM layer ORDER BY position")?;
     let rows = stmt.query_map([], |r| {
         Ok(Layer {
             id: r.get(0)?,
@@ -241,10 +243,12 @@ fn materialize_occurrences(
         };
 
         for start in starts {
-            if let Some(exdates) = &event.exdates_json {
-                if is_excluded(exdates, start) {
-                    continue;
-                }
+            // `let ... &&` em vez de `if let` aninhado: o clippy exige a forma
+            // colapsada, e o gate roda com `-D warnings`.
+            if let Some(exdates) = &event.exdates_json
+                && is_excluded(exdates, start)
+            {
+                continue;
             }
             let inserted = tx.execute(
                 "INSERT INTO event_occurrence
@@ -297,6 +301,16 @@ fn expand_rule(event: &RecurringEvent, from: i64, to: i64) -> Result<Vec<i64>, D
     // referência: `.cloned()` copia a `String`, `as_str()` empresta o `&str` que
     // `matches_freq` espera. `.copied()` não existe para `String` (não é `Copy`).
     let freq: &str = parts.get("FREQ").map(String::as_str).unwrap_or("WEEKLY");
+    // `FREQ` ausente assume semanal (o padrão histórico do dado já gravado). Mas
+    // `FREQ` **presente e desconhecido** é recusado: antes ele caía no ramo `_`
+    // e virava semanal em silêncio, então uma série mensal virava semanal e
+    // ninguém percebia. O erro é explícito e nomeia o valor.
+    const SUPPORTED_FREQ: [&str; 4] = ["HOURLY", "DAILY", "WEEKLY", "MONTHLY"];
+    if !SUPPORTED_FREQ.contains(&freq) {
+        return Err(DbError::Domain(format!(
+            "FREQ não suportado: {freq} (aceitos: HOURLY, DAILY, WEEKLY, MONTHLY)"
+        )));
+    }
     let interval = parts
         .get("INTERVAL")
         .and_then(|value| value.parse::<i64>().ok())
@@ -320,7 +334,11 @@ fn expand_rule(event: &RecurringEvent, from: i64, to: i64) -> Result<Vec<i64>, D
     // Passo diário em vez de um `stepping` por FREQ: a grade é sempre por dia, e
     // uma rotina só de passo diário cobre DAILY/WEEKLY/HOURLY sem três
     // aritméticas distintas para o mesmo resultado.
-    let step_ms: i64 = if freq == "HOURLY" { 3_600_000 } else { 86_400_000 };
+    let step_ms: i64 = if freq == "HOURLY" {
+        3_600_000
+    } else {
+        86_400_000
+    };
 
     let mut out = Vec::new();
     // `emitted` conta desde o **ancor**, não desde a janela: um `COUNT` de 10 tem
@@ -400,6 +418,39 @@ fn weekday_of(instant: i64) -> i64 {
     (days + 4).rem_euclid(7)
 }
 
+/// Dias desde a época Unix para data civil `(ano, mês, dia)`.
+///
+/// Aritmética de calendário exata (Hinnant), em inteiro puro: não depende de
+/// `chrono`, não depende do fuso do host e não tem tabela de meses bissextos
+/// para errar. `instant` é epoch-ms **UTC**; o dia civil é o dia UTC, que é o
+/// que a recorrência ancorada usa (D6).
+fn civil_from_days(days: i64) -> (i64, i64, i64) {
+    // Desloca a época para 0000-03-01, onde o ciclo de 146_097 dias começa.
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    (if m <= 2 { y + 1 } else { y }, m, d)
+}
+
+/// Dia do mês (1..=31) de um instante.
+fn day_of_month(instant: i64) -> i64 {
+    civil_from_days(instant.div_euclid(86_400_000)).2
+}
+
+/// Quantos meses separam `from` de `to` no calendário civil. Negativo quando
+/// `to` é anterior.
+fn months_between(from: i64, to: i64) -> i64 {
+    let (y1, m1, _) = civil_from_days(from.div_euclid(86_400_000));
+    let (y2, m2, _) = civil_from_days(to.div_euclid(86_400_000));
+    (y2 - y1) * 12 + (m2 - m1)
+}
+
 fn matches_freq(
     freq: &str,
     bydays: &[i64],
@@ -412,16 +463,40 @@ fn matches_freq(
     match freq {
         "HOURLY" => (instant - anchor) / 3_600_000 % interval == 0,
         "DAILY" => days_from_anchor % interval == 0,
-        _ => {
-            // WEEKLY e o padrão: o ciclo conta semanas, e `BYDAY` escolhe os dias.
+        "MONTHLY" => {
+            // Mensal repete o **dia do mês**, não a distância em dias. Somar 30
+            // dias a 31 de janeiro cai no dia 28/1º de março, e a série mudava de
+            // dia sozinha. O ciclo conta meses de calendário, e o dia precisa
+            // bater com o do âncora.
+            //
+            // `BYDAY` não se aplica aqui: `FREQ=MONTHLY;BYDAY=2MO` é "segunda
+            // segunda do mês" no RFC 5545, que este subconjunto deliberadamente
+            // não implementa — melhor ignorar `BYDAY` do que gerar a data
+            // errada em silêncio.
+            if day_of_month(instant) != day_of_month(anchor) {
+                return false;
+            }
+            let months = months_between(anchor, instant);
+            months >= 0 && months % interval == 0
+        }
+        "WEEKLY" => {
+            // O ciclo conta semanas.
             if (step_count - 1) % interval != 0 {
                 return false;
             }
             if bydays.is_empty() {
-                return true;
+                // Sem `BYDAY`, o RFC 5545 usa o **dia da semana do DTSTART**.
+                // O código aceitava qualquer dia, então `FREQ=WEEKLY` sem
+                // `BYDAY` materializava os 7 dias da semana — uma série diária
+                // que só parecia semanal porque o rótulo dizia assim.
+                return weekday_of(instant) == weekday_of(anchor);
             }
             bydays.contains(&weekday_of(instant))
         }
+        // `expand_rule` recusa `FREQ` desconhecido antes de chegar aqui, então
+        // este ramo é inalcançável. Deixá-lo explícito impede que um `FREQ` novo
+        // volte a cair no semanal em silêncio — que foi exatamente o bug.
+        _ => false,
     }
 }
 
@@ -577,21 +652,24 @@ pub fn list_responsibilities_core(
            AND (?3 IS NULL OR layer_id = ?3)
          ORDER BY due_at IS NULL, due_at, title",
     )?;
-    let rows = stmt.query_map(params![filter.due_before, filter.state, filter.layer_id], |r| {
-        Ok(Responsibility {
-            id: r.get(0)?,
-            layer_id: r.get(1)?,
-            title: r.get(2)?,
-            kind: r.get(3)?,
-            commitment: r.get(4)?,
-            state: r.get(5)?,
-            due_at: r.get(6)?,
-            planned_duration: r.get(7)?,
-            origin: r.get(8)?,
-            owner_id: r.get(9)?,
-            parent_id: r.get(10)?,
-        })
-    })?;
+    let rows = stmt.query_map(
+        params![filter.due_before, filter.state, filter.layer_id],
+        |r| {
+            Ok(Responsibility {
+                id: r.get(0)?,
+                layer_id: r.get(1)?,
+                title: r.get(2)?,
+                kind: r.get(3)?,
+                commitment: r.get(4)?,
+                state: r.get(5)?,
+                due_at: r.get(6)?,
+                planned_duration: r.get(7)?,
+                origin: r.get(8)?,
+                owner_id: r.get(9)?,
+                parent_id: r.get(10)?,
+            })
+        },
+    )?;
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }
 
@@ -829,9 +907,18 @@ pub struct EntityId {
 /// registro do que aconteceu sobrevive ao item.
 pub fn delete_event_core(db: &Db, payload: EntityId) -> Result<(), DbError> {
     db.write(|tx| {
-        tx.execute("DELETE FROM event_occurrence WHERE event_id = ?1", params![payload.id])?;
-        tx.execute("DELETE FROM event_recurrence WHERE event_id = ?1", params![payload.id])?;
-        tx.execute("DELETE FROM calendar_event WHERE id = ?1", params![payload.id])?;
+        tx.execute(
+            "DELETE FROM event_occurrence WHERE event_id = ?1",
+            params![payload.id],
+        )?;
+        tx.execute(
+            "DELETE FROM event_recurrence WHERE event_id = ?1",
+            params![payload.id],
+        )?;
+        tx.execute(
+            "DELETE FROM calendar_event WHERE id = ?1",
+            params![payload.id],
+        )?;
         Ok(())
     })
 }
@@ -1020,7 +1107,10 @@ pub fn update_recurrence_core(db: &Db, payload: UpdateRecurrence) -> Result<(), 
                 }
                 tx.execute(
                     "UPDATE event_recurrence SET exdates_json = ?2 WHERE id = ?1",
-                    params![payload.rule_id, serde_json::to_string(&exdates).unwrap_or_else(|_| "[]".into())],
+                    params![
+                        payload.rule_id,
+                        serde_json::to_string(&exdates).unwrap_or_else(|_| "[]".into())
+                    ],
                 )?;
                 tx.execute(
                     "UPDATE event_occurrence
@@ -1458,7 +1548,9 @@ fn insert_execution(
         "responsibility" => "responsibility",
         "block" => "plan_block",
         other => {
-            return Err(DbError::Domain(format!("alvo de execução desconhecido: {other}")));
+            return Err(DbError::Domain(format!(
+                "alvo de execução desconhecido: {other}"
+            )));
         }
     };
     let sql = format!("UPDATE {table} SET state = ?1 WHERE id = ?2");
@@ -1516,7 +1608,10 @@ pub struct RecordExecution {
 
 /// Registrar execução parcial não conclui: o item segue aberto e o registro
 /// alimenta o histórico e a comparação planejado × real do §6.
-pub fn record_execution_core(db: &Db, payload: RecordExecution) -> Result<ExecutionRecord, DbError> {
+pub fn record_execution_core(
+    db: &Db,
+    payload: RecordExecution,
+) -> Result<ExecutionRecord, DbError> {
     db.write(|tx| insert_execution(tx, &payload.target, &payload.record, "em_andamento"))
 }
 
@@ -1602,6 +1697,111 @@ mod tests {
 
     const T0: i64 = 1_757_000_000_000;
     const HOUR: i64 = 3_600_000;
+    const DAY: i64 = 86_400_000;
+
+    fn recurring(rrule: &str) -> RecurringEvent {
+        RecurringEvent {
+            event_id: "evt-1".into(),
+            starts_at: T0,
+            ends_at: T0 + HOUR,
+            event_state: None,
+            rule_id: Some("rule-1".into()),
+            rrule: Some(rrule.into()),
+            until_at: None,
+            count: None,
+            exdates_json: Some("[]".into()),
+        }
+    }
+
+    /// `FREQ=MONTHLY` é declarado suportado no doc de `expand_rule`, mas caía no
+    /// ramo `_` de `matches_freq` e era expandido como **semanal**. Uma regra
+    /// mensal virando semanal é o tipo de bug que ninguém percebe sem ler a
+    /// série inteira, então o teste fixa o **dia do mês** de cada ocorrência.
+    #[test]
+    fn monthly_ocorre_no_mesmo_dia_do_mes() {
+        let out = expand_rule(&recurring("FREQ=MONTHLY"), T0, T0 + 120 * DAY).expect("expande");
+        assert!(
+            out.len() >= 3,
+            "4 meses de janela dão 4 ocorrências, veio {}",
+            out.len()
+        );
+        let dia_do_ancora = day_of_month(T0);
+        for start in &out {
+            assert_eq!(
+                day_of_month(*start),
+                dia_do_ancora,
+                "ocorrência {:?} saiu do dia {}",
+                start,
+                dia_do_ancora
+            );
+        }
+        // E o intervalo entre elas é de meses, não de 30 dias.
+        assert!(
+            !out.contains(&(T0 + DAY)),
+            "o dia seguinte não é ocorrência mensal"
+        );
+    }
+
+    #[test]
+    fn monthly_nao_casa_todo_dia() {
+        // A falha original: com `FREQ=MONTHLY` o `_` tratava como semanal.
+        let start_dia_seguinte = T0 + DAY;
+        assert!(
+            !matches_freq("MONTHLY", &[], start_dia_seguinte, T0, 1, 2),
+            "o dia seguinte não pertence a uma série mensal"
+        );
+    }
+
+    #[test]
+    fn weekly_sem_byday_usa_o_dia_da_semana_do_ancora() {
+        // `FREQ=WEEKLY` sem `BYDAY` materializava os 7 dias da semana.
+        assert!(
+            matches_freq("WEEKLY", &[], T0 + 7 * DAY, T0, 1, 8),
+            "a mesma dia da semana, uma semana depois, casa"
+        );
+        for dia in 1..=6 {
+            assert!(
+                !matches_freq("WEEKLY", &[], T0 + dia * DAY, T0, 1, dia + 1),
+                "dia {dia} da semana não pertence a uma série semanal sem BYDAY"
+            );
+        }
+    }
+
+    #[test]
+    fn daily_e_weekly_continuam_certo() {
+        assert!(matches_freq("DAILY", &[], T0 + 2 * DAY, T0, 1, 3));
+        assert!(
+            !matches_freq("DAILY", &[], T0 + DAY, T0, 2, 2),
+            "INTERVAL=2 pula o dia 1 (casa em 0, 2, 4...)"
+        );
+        assert!(
+            matches_freq("DAILY", &[], T0 + 2 * DAY, T0, 2, 3),
+            "INTERVAL=2 casa no dia 2"
+        );
+        // Com BYDAY, o dia da semana escolhido manda.
+        let terca = weekday_of(T0);
+        assert!(matches_freq("WEEKLY", &[terca], T0 + 7 * DAY, T0, 1, 8));
+    }
+
+    #[test]
+    fn civil_from_days_conhece_bissexto_e_virada_de_mes() {
+        // 2020-02-29 e 2021-02-28: o dia 29 não existe em 2021.
+        let bissexto: i64 = 18_321; // 2020-02-29
+        assert_eq!(civil_from_days(bissexto), (2020, 2, 29));
+        let nao_bissexto = bissexto + 365;
+        assert_eq!(civil_from_days(nao_bissexto), (2021, 2, 28));
+        // Virada de ano.
+        assert_eq!(civil_from_days(19_723), (2024, 1, 1));
+    }
+
+    #[test]
+    fn freq_desconhecido_e_recusado_em_vez_de_virar_semanal() {
+        let err = expand_rule(&recurring("FREQ=ANUAL"), T0, T0 + 30 * DAY).expect_err("recusa");
+        assert!(
+            err.to_string().to_lowercase().contains("freq"),
+            "a mensagem cita FREQ: {err}"
+        );
+    }
 
     fn event_payload(title: &str) -> UpsertEvent {
         UpsertEvent {
@@ -1667,7 +1867,14 @@ mod tests {
     #[test]
     fn set_layer_visibility_persiste() {
         let db = Db::open_in_memory().expect("banco");
-        set_layer_visibility_core(&db, SetLayerVisibility { id: "tcc".into(), visible: false }).expect("altera");
+        set_layer_visibility_core(
+            &db,
+            SetLayerVisibility {
+                id: "tcc".into(),
+                visible: false,
+            },
+        )
+        .expect("altera");
         let layers = list_layers_core(&db).expect("camadas");
         assert!(!layers.iter().find(|l| l.id == "tcc").expect("tcc").visible);
     }
@@ -1678,7 +1885,10 @@ mod tests {
         let mut payload = event_payload("Aula importada");
         payload.origin = "google".into();
         let err = create_event_core(&db, payload).expect_err("INV-6 precisa recusar");
-        assert!(err.to_string().contains("INV-6"), "mensagem explica a recusa");
+        assert!(
+            err.to_string().contains("INV-6"),
+            "mensagem explica a recusa"
+        );
         let total: i64 = db
             .conn()
             .unwrap()
@@ -1719,7 +1929,10 @@ mod tests {
             &db,
             UpdateEvent {
                 id: created.id.clone(),
-                patch: UpsertEventPatch { location: Some(None), ..Default::default() },
+                patch: UpsertEventPatch {
+                    location: Some(None),
+                    ..Default::default()
+                },
             },
         )
         .expect("atualiza");
@@ -1730,7 +1943,10 @@ mod tests {
             &db,
             UpdateEvent {
                 id: created.id.clone(),
-                patch: UpsertEventPatch { title: Some("Novo".to_string()), ..Default::default() },
+                patch: UpsertEventPatch {
+                    title: Some("Novo".to_string()),
+                    ..Default::default()
+                },
             },
         )
         .expect("atualiza");
@@ -1753,9 +1969,23 @@ mod tests {
         })
         .expect("materializa");
 
-        let dentro = list_events_in_window_core(&db, Window { from: T0 + 60_000, to: T0 + HOUR }).expect("janela");
+        let dentro = list_events_in_window_core(
+            &db,
+            Window {
+                from: T0 + 60_000,
+                to: T0 + HOUR,
+            },
+        )
+        .expect("janela");
         assert_eq!(dentro.len(), 1, "interseção parcial conta");
-        let fora = list_events_in_window_core(&db, Window { from: T0 + 2 * HOUR, to: T0 + 3 * HOUR }).expect("janela");
+        let fora = list_events_in_window_core(
+            &db,
+            Window {
+                from: T0 + 2 * HOUR,
+                to: T0 + 3 * HOUR,
+            },
+        )
+        .expect("janela");
         assert!(fora.is_empty(), "janela sem interseção não traz nada");
     }
 
@@ -1777,13 +2007,24 @@ mod tests {
 
         let moved = move_occurrence_core(
             &db,
-            MoveOccurrence { id: "occ-1".into(), starts_at: T0 + 5 * HOUR, ends_at: T0 + 6 * HOUR },
+            MoveOccurrence {
+                id: "occ-1".into(),
+                starts_at: T0 + 5 * HOUR,
+                ends_at: T0 + 6 * HOUR,
+            },
         )
         .expect("move");
-        assert_eq!(moved.original_start, T0, "§5: a identidade é a data original");
+        assert_eq!(
+            moved.original_start, T0,
+            "§5: a identidade é a data original"
+        );
         assert_eq!(moved.starts_at, T0 + 5 * HOUR);
         assert_eq!(moved.override_kind, "moved");
-        assert_eq!(moved.ends_at - moved.starts_at, HOUR, "a duração é preservada");
+        assert_eq!(
+            moved.ends_at - moved.starts_at,
+            HOUR,
+            "a duração é preservada"
+        );
     }
 
     #[test]
@@ -1809,7 +2050,11 @@ mod tests {
 
         let cancelled = set_occurrence_state_core(
             &db,
-            SetOccurrenceState { id: "occ-1".into(), state: "cancelado".into(), reason: Some("aula cancelada".into()) },
+            SetOccurrenceState {
+                id: "occ-1".into(),
+                state: "cancelado".into(),
+                reason: Some("aula cancelada".into()),
+            },
         )
         .expect("cancela");
         assert_eq!(cancelled.override_kind, "cancelled");
@@ -1818,7 +2063,11 @@ mod tests {
         let rrule: String = db
             .conn()
             .unwrap()
-            .query_row("SELECT rrule FROM event_recurrence WHERE id = 'rule-1'", [], |r| r.get(0))
+            .query_row(
+                "SELECT rrule FROM event_recurrence WHERE id = 'rule-1'",
+                [],
+                |r| r.get(0),
+            )
             .expect("regra");
         assert_eq!(rrule, "FREQ=WEEKLY;BYDAY=TU", "INV-5: a série não muda");
     }
@@ -1857,14 +2106,25 @@ mod tests {
 
         let rrule: String = {
             let conn = db.conn().unwrap();
-            conn.query_row("SELECT rrule FROM event_recurrence WHERE id = 'rule-1'", [], |r| r.get(0))
-                .expect("regra")
+            conn.query_row(
+                "SELECT rrule FROM event_recurrence WHERE id = 'rule-1'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("regra")
         };
-        assert_eq!(rrule, "FREQ=WEEKLY;BYDAY=TU", "INV-5: a regra fica byte-idêntica");
+        assert_eq!(
+            rrule, "FREQ=WEEKLY;BYDAY=TU",
+            "INV-5: a regra fica byte-idêntica"
+        );
         let still_linked: i64 = db
             .conn()
             .unwrap()
-            .query_row("SELECT COUNT(*) FROM event_occurrence WHERE id = 'occ-1' AND rule_id IS NOT NULL", [], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM event_occurrence WHERE id = 'occ-1' AND rule_id IS NOT NULL",
+                [],
+                |r| r.get(0),
+            )
             .expect("conta");
         assert_eq!(still_linked, 0, "a instância foi solta da regra");
     }
@@ -1876,7 +2136,10 @@ mod tests {
         let err = complete_item_core(
             &db,
             CompleteItem {
-                target: Target { kind: "responsibility".into(), id: resp.id.clone() },
+                target: Target {
+                    kind: "responsibility".into(),
+                    id: resp.id.clone(),
+                },
                 record: None,
             },
         )
@@ -1886,9 +2149,14 @@ mod tests {
         let (state, execs): (String, i64) = {
             let conn = db.conn().unwrap();
             (
-                conn.query_row("SELECT state FROM responsibility WHERE id = ?1", params![resp.id], |r| r.get(0))
-                    .expect("estado"),
-                conn.query_row("SELECT COUNT(*) FROM execution_record", [], |r| r.get(0)).expect("conta"),
+                conn.query_row(
+                    "SELECT state FROM responsibility WHERE id = ?1",
+                    params![resp.id],
+                    |r| r.get(0),
+                )
+                .expect("estado"),
+                conn.query_row("SELECT COUNT(*) FROM execution_record", [], |r| r.get(0))
+                    .expect("conta"),
             )
         };
         assert_eq!(state, "planejado", "o estado não mudou");
@@ -1902,7 +2170,10 @@ mod tests {
         complete_item_core(
             &db,
             CompleteItem {
-                target: Target { kind: "responsibility".into(), id: resp.id.clone() },
+                target: Target {
+                    kind: "responsibility".into(),
+                    id: resp.id.clone(),
+                },
                 record: Some(execution(T0 + 45 * 60_000)),
             },
         )
@@ -1910,11 +2181,20 @@ mod tests {
         let (state, execs, actual): (String, i64, i64) = {
             let conn = db.conn().unwrap();
             (
-                conn.query_row("SELECT state FROM responsibility WHERE id = ?1", params![resp.id], |r| r.get(0))
-                    .expect("estado"),
-                conn.query_row("SELECT COUNT(*) FROM execution_record", [], |r| r.get(0)).expect("conta"),
-                conn.query_row("SELECT actual_duration_min FROM execution_record", [], |r| r.get(0))
-                    .expect("duração"),
+                conn.query_row(
+                    "SELECT state FROM responsibility WHERE id = ?1",
+                    params![resp.id],
+                    |r| r.get(0),
+                )
+                .expect("estado"),
+                conn.query_row("SELECT COUNT(*) FROM execution_record", [], |r| r.get(0))
+                    .expect("conta"),
+                conn.query_row(
+                    "SELECT actual_duration_min FROM execution_record",
+                    [],
+                    |r| r.get(0),
+                )
+                .expect("duração"),
             )
         };
         assert_eq!(state, "concluido");
@@ -1929,7 +2209,10 @@ mod tests {
         record_execution_core(
             &db,
             RecordExecution {
-                target: Target { kind: "responsibility".into(), id: resp.id.clone() },
+                target: Target {
+                    kind: "responsibility".into(),
+                    id: resp.id.clone(),
+                },
                 record: execution(T0 + 20 * 60_000),
             },
         )
@@ -1937,7 +2220,11 @@ mod tests {
         let state: String = db
             .conn()
             .unwrap()
-            .query_row("SELECT state FROM responsibility WHERE id = ?1", params![resp.id], |r| r.get(0))
+            .query_row(
+                "SELECT state FROM responsibility WHERE id = ?1",
+                params![resp.id],
+                |r| r.get(0),
+            )
             .expect("estado");
         assert_eq!(state, "em_andamento", "registrar não conclui");
     }
@@ -1975,12 +2262,24 @@ mod tests {
         let (execs, occs, rules): (i64, i64, i64) = {
             let conn = db.conn().unwrap();
             (
-                conn.query_row("SELECT COUNT(*) FROM execution_record WHERE id = 'exe-1'", [], |r| r.get(0))
-                    .expect("histórico"),
-                conn.query_row("SELECT COUNT(*) FROM event_occurrence WHERE event_id = ?1", params![evt.id], |r| r.get(0))
-                    .expect("ocorrências"),
-                conn.query_row("SELECT COUNT(*) FROM event_recurrence WHERE event_id = ?1", params![evt.id], |r| r.get(0))
-                    .expect("regras"),
+                conn.query_row(
+                    "SELECT COUNT(*) FROM execution_record WHERE id = 'exe-1'",
+                    [],
+                    |r| r.get(0),
+                )
+                .expect("histórico"),
+                conn.query_row(
+                    "SELECT COUNT(*) FROM event_occurrence WHERE event_id = ?1",
+                    params![evt.id],
+                    |r| r.get(0),
+                )
+                .expect("ocorrências"),
+                conn.query_row(
+                    "SELECT COUNT(*) FROM event_recurrence WHERE event_id = ?1",
+                    params![evt.id],
+                    |r| r.get(0),
+                )
+                .expect("regras"),
             )
         };
         assert_eq!(execs, 1, "D12: o histórico sobrevive ao item");
@@ -2035,7 +2334,11 @@ mod tests {
 
         let movido = reschedule_block_core(
             &db,
-            RescheduleBlock { id: bloco.id.clone(), starts_at: T0 + 3 * HOUR, ends_at: T0 + 4 * HOUR },
+            RescheduleBlock {
+                id: bloco.id.clone(),
+                starts_at: T0 + 3 * HOUR,
+                ends_at: T0 + 4 * HOUR,
+            },
         )
         .expect("reagenda");
         assert_eq!(movido.starts_at, T0 + 3 * HOUR);
@@ -2050,11 +2353,15 @@ mod tests {
         sem_prazo.due_at = None;
         create_responsibility_core(&db, sem_prazo).expect("cria");
 
-        let todas = list_responsibilities_core(&db, ResponsibilityFilter::default()).expect("lista");
+        let todas =
+            list_responsibilities_core(&db, ResponsibilityFilter::default()).expect("lista");
         assert_eq!(todas.len(), 2);
         let vencidas = list_responsibilities_core(
             &db,
-            ResponsibilityFilter { due_before: Some(T0), ..Default::default() },
+            ResponsibilityFilter {
+                due_before: Some(T0),
+                ..Default::default()
+            },
         )
         .expect("filtra");
         assert_eq!(vencidas.len(), 1, "só a que tem prazo vencido");
@@ -2066,17 +2373,33 @@ mod tests {
         let db = Db::open_in_memory().expect("banco");
         set_setting_core(
             &db,
-            SetSetting { key: "locale".into(), value: serde_json::json!("pt-BR") },
+            SetSetting {
+                key: "locale".into(),
+                value: serde_json::json!("pt-BR"),
+            },
         )
         .expect("grava");
         set_setting_core(
             &db,
-            SetSetting { key: "locale".into(), value: serde_json::json!("en-US") },
+            SetSetting {
+                key: "locale".into(),
+                value: serde_json::json!("en-US"),
+            },
         )
         .expect("sobrescreve");
-        let total: i64 = db.conn().unwrap().query_row("SELECT COUNT(*) FROM setting", [], |r| r.get(0)).expect("conta");
+        let total: i64 = db
+            .conn()
+            .unwrap()
+            .query_row("SELECT COUNT(*) FROM setting", [], |r| r.get(0))
+            .expect("conta");
         assert_eq!(total, 1);
-        let value = get_setting_core(&db, SettingKey { key: "locale".into() }).expect("lê");
+        let value = get_setting_core(
+            &db,
+            SettingKey {
+                key: "locale".into(),
+            },
+        )
+        .expect("lê");
         assert_eq!(value.expect("presente").value, serde_json::json!("en-US"));
     }
 

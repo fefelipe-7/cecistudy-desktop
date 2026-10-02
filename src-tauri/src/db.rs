@@ -55,6 +55,11 @@ impl Db {
     }
 
     /// Abre em memória. Usado nos testes, para não tocar no banco real.
+    ///
+    /// `#[allow(dead_code)]` porque é a costura de teste: nada na lib de
+    /// produção a chama, mas `mod tests` depende dela — sem o atributo o build
+    /// normal dispara `dead_code` e o clippy roda com `-D warnings`.
+    #[allow(dead_code)]
     pub fn open_in_memory() -> Result<Self, DbError> {
         Self::from_connection(Connection::open_in_memory()?)
     }
@@ -75,9 +80,9 @@ impl Db {
 
     /// Conexão sob lock. Sem `&mut`, porque quem chama é `&Db`.
     pub fn conn(&self) -> Result<MutexGuard<'_, Connection>, DbError> {
-        self.conn
-            .lock()
-            .map_err(|_| DbError::Domain("conexão com o banco foi envenenada por um panic anterior".into()))
+        self.conn.lock().map_err(|_| {
+            DbError::Domain("conexão com o banco foi envenenada por um panic anterior".into())
+        })
     }
 
     /// Aplica as migrations pendentes, em ordem, uma transação por arquivo.
@@ -95,7 +100,7 @@ impl Db {
             // `PRAGMA user_version` não aceita placeholder, mas o valor é um
             // inteiro derivado do índice do array — nunca entrada do usuário.
             tx.pragma_update(None, "user_version", version)?;
-tx.commit()?;
+            tx.commit()?;
         }
         // Mesmo formato da leitura no topo da função: a anotação `u32` é o que
         // fixa a inferência de `row.get(0)`. Sem ela o compilador tenta
@@ -202,7 +207,11 @@ mod tests {
     #[test]
     fn foreign_keys_esta_ativo() {
         let db = Db::open_in_memory().expect("abre");
-        let on: i64 = db.conn().unwrap().query_row("PRAGMA foreign_keys", [], |r| r.get(0)).expect("pragma");
+        let on: i64 = db
+            .conn()
+            .unwrap()
+            .query_row("PRAGMA foreign_keys", [], |r| r.get(0))
+            .expect("pragma");
         assert_eq!(on, 1, "ON DELETE CASCADE depende de foreign_keys = ON");
     }
 

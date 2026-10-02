@@ -8,6 +8,8 @@ name: ci
 #   typecheck + lint   → o TypeScript compila e segue o estilo do projeto
 #   test (Node)        → os testes de domínio, sem toolchain Rust
 #   test:rust          → os testes do backend, que é onde a regra de domínio mora
+#   lint:rust/fmt:rust → clippy com `-D warnings` e rustfmt, para o gate Rust não
+#                        apodrecer em silêncio
 #   gate:boundary      → fronteiras viradas em código executável
 #
 # `npm run gate` é o mesmo encadeamento, para rodar localmente antes do push.
@@ -81,6 +83,12 @@ jobs:
 
       - name: test (backend Rust)
         run: npm run test:rust
+
+      - name: clippy (Rust, -D warnings)
+        run: npm run lint:rust
+
+      - name: rustfmt --check
+        run: npm run fmt:rust
 
       - name: boundary check
         run: npm run gate:boundary
