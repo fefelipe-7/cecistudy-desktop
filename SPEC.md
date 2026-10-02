@@ -7,7 +7,20 @@ Escopo: remover rastros do Lovable, trocar Bun por npm, substituir TanStack Star
 
 Fases 0 a 6 implementadas e commitadas. `typecheck`, `lint` e `build` verdes; front-end validado no Chrome (dev e produção).
 
-**Pendente:** a compilação Rust (`cargo check` / `tauri:dev`) está bloqueada por falta do MSVC Build Tools na máquina — `link.exe not found`. O `rustup default` já foi corrigido para `stable-x86_64-pc-windows-msvc`. Instalar o *Visual Studio Build Tools 2022* com o workload "Desktop development with C++" destrava a Fase 5; a config do Tauri já está pronta e não precisa de ajuste.
+**Pendente:** a compilação Rust está bloqueada nesta máquina por falta de um toolchain C capaz de **linkar**. Diagnóstico completo, verificado em 2026-09-29:
+
+1. `rustup default` é `stable-x86_64-pc-windows-msvc`; não há MSVC Build Tools, então `link.exe not found`.
+2. `cargo check` **também** falha, e não apenas `cargo build`. Build scripts e crates de proc-macro são compilados **e linkados para o host**, então o linker do host é obrigatório mesmo em `check`.
+3. Instalar só o _target_ `x86_64-pc-windows-gnu` não resolve, porque os build scripts continuam sendo linkados no host `msvc`.
+4. Instalar o toolchain **host** `stable-x86_64-pc-windows-gnu` resolve o item 3, mas esbarra em outro problema: o único compilador C presente é o **llvm-mingw** (em `~/AppData/Local/llvm-mingw-*`), que usa `libunwind` e **não** fornece `libgcc`/`libgcc_eh`, exigidos pelo `rustc` do alvo `windows-gnu` (`lld: error: unable to find library -lgcc_eh`).
+5. Piso verificado: um crate sem dependências, sem proc-macro e sem build script **passa** em `cargo check` sem nenhum linker. A barreira é, portanto, o conjunto de crates com build script — que inclui `libsqlite3-sys` (usado por `rusqlite`) e todo o `serde` derive.
+
+**Como destravar** (qualquer uma das duas):
+
+- instalar o _Visual Studio Build Tools 2022_ com o workload "Desktop development with C++" — recomendado, porque é o alvo que o Tauri suporta melhor e mantém `rustup default` em `msvc`; ou
+- instalar um **mingw-w64 completo** (MSYS2 GCC ou WinLibs) e passar a usar o toolchain `stable-x86_64-pc-windows-gnu` como host — o llvm-mingw não serve, por não trazer `libgcc`.
+
+Enquanto isso, o backend Rust da spec 01 foi escrito e revisado, e o schema foi **validado contra um engine SQLite real** pelo `node:sqlite` do Node 26 — ver `docs/calendario/01-dominio-persistencia.md` §4.
 
 ---
 
