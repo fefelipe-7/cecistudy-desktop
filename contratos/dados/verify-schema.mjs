@@ -155,6 +155,10 @@ const USER_TABLES = [
   "internship",
   "internship_concept",
   "internship_topic",
+  // SPEC-M-013 D1 — a projeção clínica. A lista é fechada, e o verifier é o que
+  // impede que ela cresça sem revisão (ver AGENTS.md: "campo novo entra aqui e
+  // nos outros três, ou não entra").
+  "internship_clinical",
   "supervision_notebook",
   "thesis_project",
   "thesis_chapter",

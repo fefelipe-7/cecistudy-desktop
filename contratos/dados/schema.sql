@@ -9,8 +9,9 @@
  * verificador (`node contratos/dados/verify-schema.mjs`).
  *
  * Referência de versões (ver `packages/data/src/schema.ts`):
- *   SCHEMA_VERSION      = 13   (versão do payload persistido/backup)
- *   USER_SCHEMA_VERSION = 1    (versão da base SQLite da usuária `cecistudy_user`)
+ *   SCHEMA_VERSION      = 20   (versão do payload persistido/backup)
+ *   USER_SCHEMA_VERSION = 3    (versão da base SQLite da usuária `cecistudy_user`;
+ *                                o passo 3 cria `internship_clinical`)
  *   CATALOG_RELEASE     = ver `content/catalog-version.json` (catálogo estático)
  *
  * Dois bancos lógicos (web usa facades JS; nativo usa SQLite):
@@ -236,6 +237,23 @@ CREATE TABLE IF NOT EXISTS internship_topic (
   topic TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_internship_topic_log ON internship_topic(internship_id);
+
+-- SPEC-M-013 D1: a projeção da camada clínica do Estágio.
+-- É o ÚNICO dado clínico que o celular persiste, e são cinco campos: id,
+-- iniciais, data, duracao_min e para_levar. §4.8 linha 472 da spec referencial
+-- é lista fechada, e a linha 545 diz que isso é "regra fixa, não configuração"
+-- — por isso a tabela não tem coluna genérica de conteúdo clínico, e por isso o
+-- schema de backup é estrito. O registro completo vive no desktop, no store
+-- clínico separado, e o tradutor reduz antes de serializar (SPEC-C-013 D5).
+CREATE TABLE IF NOT EXISTS internship_clinical (
+  id TEXT PRIMARY KEY,
+  iniciais TEXT NOT NULL,
+  data TEXT NOT NULL,
+  duracao_min INTEGER NOT NULL,
+  para_levar TEXT,
+  data_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_internship_clinical_data ON internship_clinical(data);
 
 CREATE TABLE IF NOT EXISTS supervision_notebook (
   id TEXT PRIMARY KEY,
