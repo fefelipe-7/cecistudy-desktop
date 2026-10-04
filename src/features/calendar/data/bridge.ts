@@ -356,3 +356,14 @@ export async function recordExecution(
 ): Promise<void> {
   await invoke("record_execution", { payload: { target, record } });
 }
+
+/**
+ * Transição de estado que **não** é conclusão.
+ *
+ * O Rust recusa `concluido` por aqui (INV-3) e recusa transição fora da tabela
+ * de §3.1. Esta função não decide nada disso: quem decide é o backend, e o
+ * erro volta como rejeição da promessa.
+ */
+export async function setItemState(target: ExecutionTargetWire, state: ItemState): Promise<void> {
+  await invoke("set_item_state", { payload: { target, state } });
+}

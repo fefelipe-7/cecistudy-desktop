@@ -92,6 +92,17 @@
 :root {
   --radius: 0.5rem;
 
+  /* As duas larguras da barra lateral, e onde elas vêm.
+     Expandida em 240px: a banda em que nenhum rótulo em pt-BR trunca — o mais
+     longo é "TCC & Projetos" — e 240px é múltiplo de 8, então os itens caem na
+     grade. 228px (o valor anterior) truncava.
+     Recolhida em 48px: trilho de ícone com item de 32px e 8px de gutter, que é a
+     densidade máxima em que o alvo ainda passa com folga por WCAG 2.5.8 (mínimo
+     24×24) em vez de por exceção. 44px dava item de 28px, fora da faixa de
+     32–36px de `DESIGN.md`. */
+  --rail-expandida: 240px;
+  --rail-recolhida: 3rem;
+
   /* Um único override corrige o Radix inteiro sem editar quatro arquivos do set
      curado (AGENTS.md:12). O `tw-animate-css` lê `var(--tw-duration, .15s)` e
      `var(--tw-ease, ease)`: declarar aqui faz todo `animate-in`/`animate-out` do
@@ -441,6 +452,24 @@
   transition-duration: var(--duration-large);
   transition-timing-function: var(--ease-spatial);
   transition-property: transform;
+}
+
+/* A largura da barra lateral **não anima**, e a decisão é do app, nãoesquema:
+   `docs/performance/02-transicoes-animacoes.md:279` (DM4) proíbe transicionar
+   `width`, e o item nº1 do inventário de performance é a própria barra lateral,
+   classificado 🔴 "Proibido por DM4" — porque `width` em flex row reflowa o
+   `<main>` inteiro, que na visão Calendário contém a grade de 7 colunas com dois
+   `sticky` + `backdrop-blur`. Recolher é **corte seco**, que é a saída 2 do DM4 e a
+   saidapreferred é o corte seco (:286).
+
+   O que sobra de transição aqui é o **rótulo**, em opacidade — que é composite e
+   está na lista do que DM4 permite. A caixa vai de 240px para 48px sem quadro
+   intermediário; o texto cruza os 150ms. O resultado lê como uma decisão, e não
+   como um salto. */
+@utility motion-rail-label {
+  transition-property: opacity;
+  transition-duration: var(--duration-small);
+  transition-timing-function: var(--ease-standard);
 }
 
 @keyframes cross-fade-in {

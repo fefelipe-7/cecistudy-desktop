@@ -1,8 +1,11 @@
 name: ci
 
-# Gate do Campus. Débito C8 do grupo: havia 173 testes TypeScript e 22 Rust
-# escritos, **nenhum** script `test` e nenhuma CI — ou seja, 195 testes que
-# ninguém rodava. Este arquivo é o que transforma regra em garantia.
+# Gate do Campus. Débito C8 do grupo: havia testes TypeScript e Rust escritos,
+# **nenhum** script `test` e nenhuma CI — ou seja, testes que ninguém rodava. Este
+# arquivo é o que transforma regra em garantia.
+#
+# A contagem de testes **não** está aqui de propósito. Ela envelhece e vira
+# mentira; o número que vale é o que `npm run test` imprime no fim da execução.
 #
 # O que roda, e por quê:
 #   typecheck + lint   → o TypeScript compila e segue o estilo do projeto
@@ -11,6 +14,10 @@ name: ci
 #   lint:rust/fmt:rust → clippy com `-D warnings` e rustfmt, para o gate Rust não
 #                        apodrecer em silêncio
 #   gate:boundary      → fronteiras viradas em código executável
+#   gate:modules       → o registro de módulos é a lista fechada de §2 do
+#                        referencial (SPEC-D-013 D83)
+#   gate:contracts     → manifest, Rust e TypeScript falam o mesmo contrato
+#                        (SPEC-D-013 D85)
 #
 # `npm run gate` é o mesmo encadeamento, para rodar localmente antes do push.
 
@@ -92,3 +99,14 @@ jobs:
 
       - name: boundary check
         run: npm run gate:boundary
+
+      # O registro de módulos é a lista fechada de §2 da spec referencial. Sem
+      # este passo, um nome de módulo pode ser inventado em qualquer arquivo.
+      - name: registro de módulos
+        run: npm run gate:modules
+
+      # Paridade entre o manifest, o que o Rust registra e o que o TypeScript
+      # invoca. Sem este passo, `lib.rs` pode prometer nomes que ninguém consome —
+      # que é o que `lib.rs:37-39` fazia.
+      - name: contrato Rust/TypeScript
+        run: npm run gate:contracts

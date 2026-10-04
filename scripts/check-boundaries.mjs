@@ -20,22 +20,39 @@
  * que lê comentário obriga o código a mentir no comentário.
  */
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const SRC = join(ROOT, "src");
 
-/** Arquivos autorizados a conter `invoke(` — o resto de `src/` é proibido. */
-const IPC_ALLOWED = new Set([
-  join(SRC, "lib", "ipc.ts"),
-  join(SRC, "features", "calendar", "data", "bridge.ts"),
-]);
+/**
+ * Arquivos autorizados a conter `invoke(`.
+ *
+ * A regra é `src/lib/ipc.ts` mais **uma ponte por módulo**, e a ponte é
+ * `src/features/<módulo>/data/bridge.ts`. A lista é derivada da árvore, não
+ * escrita: uma lista escrita precisa ser atualizada a cada módulo novo, e
+ * enquanto ninguém atualiza ela o gate acusa a ponte legítima — que é
+ * aconteceu com `src/features/configuracoes/data/bridge.ts`.
+ */
+const IPC_ALLOWED = new Set([join(SRC, "lib", "ipc.ts")]);
+for (const modulo of readdirSync(join(SRC, "features"))) {
+  const ponte = join(SRC, "features", modulo, "data", "bridge.ts");
+  if (existsSync(ponte)) IPC_ALLOWED.add(ponte);
+}
 
 /** Arquivos autorizados a importar o pacote do Tauri. */
 const TAURI_ALLOWED = new Set([join(SRC, "lib", "ipc.ts")]);
 
-const DOMAIN_DIR = join(SRC, "features", "calendar", "domain");
+/**
+ * O mesmo `domain/` de antes, para **todo** módulo.
+ *
+ * A lista vem da árvore porque a regra é "o `domain/` de um módulo é puro", e uma
+ * lista escrita só cobre os módulos que existiam quando o gate foi escrito.
+ */
+const DIRS_DE_DOMINIO = readdirSync(join(SRC, "features"))
+  .map((modulo) => join(SRC, "features", modulo, "domain"))
+  .filter((dir) => existsSync(dir));
 
 /** Remove comentários preservando as quebras de linha (para não colar linhas). */
 function stripComments(text) {
@@ -79,8 +96,8 @@ for (const file of files) {
     report(file, 1, "@tauri-apps/api só pode ser importado em src/lib/ipc.ts");
   }
 
-  // Regra 2 — domain/ é puro.
-  if (file.startsWith(DOMAIN_DIR)) {
+  // Regra 2 — domain/ é puro, em todo módulo.
+  if (DIRS_DE_DOMINIO.some((dir) => file.startsWith(dir))) {
     lines.forEach((line, i) => {
       if (/from\s+["'][^"']*\/(ui|data)\//.test(line)) {
         report(file, i + 1, "domain/ não importa ui/ nem data/");

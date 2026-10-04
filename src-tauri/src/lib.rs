@@ -9,7 +9,7 @@ mod db;
 
 use tauri::Manager;
 
-use db::Db;
+use db::{StoreAcademico, StoreClinico, StoreSalaTreino};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -23,20 +23,39 @@ pub fn run() {
                 )?;
             }
 
-            // O banco é criado no primeiro `setup`. Se o diretório ou o schema
-            // falhar, o app não sobe em um estado meio inicializado: é melhor
-            // erro na abertura do que tela vazia sem persistência.
+            // Os bancos são criados no primeiro `setup`. Se o diretório ou o schema
+            // falhar, o app não sobe em um estado meio inicializado: é melhor erro
+            // na abertura do que tela vazia sem persistência.
             let dir = app.path().app_data_dir()?;
-            let db = Db::open_in(&dir)?;
-            let version = db.migrate()?;
-            log::info!("SQLite pronto em {} (schema v{version})", dir.display());
-            app.manage(db);
+
+            // `SPEC-D-013` `D88`: três stores, três tipos, três arquivos. O
+            // `manage` só aceita tipos distintos, então trocar um pelo outro em
+            // runtime não compila — a regra do §1.6 linha 23 é imposta pelo
+            // compilador, e não por uma lista de prefixo de tabela.
+            let academico = StoreAcademico::open_in(&dir)?;
+            let clinico = StoreClinico::open_in(&dir)?;
+            let sala_treino = StoreSalaTreino::open_in(&dir)?;
+
+            log::info!(
+                "SQLite pronto em {} (acadêmico {} v{}, clínico {}, Sala de treino {})",
+                dir.display(),
+                academico.arquivo(),
+                academico.schema_version().unwrap_or(0),
+                clinico.arquivo(),
+                sala_treino.arquivo(),
+            );
+
+            app.manage(academico);
+            app.manage(clinico);
+            app.manage(sala_treino);
 
             Ok(())
         })
-        // §3.4: os mesmos 20 nomes que `data/bridge.ts` invoca. A lista é a
-        // fronteira entre Rust e TypeScript — se um nome divergir, o `invoke`
-        // falha em runtime, então qualquer mudança aqui muda lá também.
+        // §3.4: a fronteira entre Rust e TypeScript. `SPEC-D-013` `D85` diz que
+        // esta lista, o manifest em `contracts/*.json` e o que o TypeScript invoca
+        // são **três conjuntos que têm de ser iguais**, e `npm run gate:contracts`
+        // falha se divergirem em qualquer sentido. comentário antigo ("os mesmos 20
+        // nomes") estava errado: são 21.
         .invoke_handler(tauri::generate_handler![
             commands::migrate,
             commands::list_events_in_window,
@@ -53,6 +72,7 @@ pub fn run() {
             commands::plan_block,
             commands::reschedule_block,
             commands::complete_item,
+            commands::set_item_state,
             commands::record_execution,
             commands::list_layers,
             commands::set_layer_visibility,

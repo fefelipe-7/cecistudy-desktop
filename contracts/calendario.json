@@ -1,0 +1,158 @@
+{
+  "$spec": "SPEC-D-013 D85",
+  "$descricao": "Manifest de contrato do módulo Calendário. É gerado da seção 5 (Contrato) da SPEC-D do módulo e é o ponto de congelamento antes de qualquer código, dos dois lados (D86). O gate `npm run gate:contracts` compara este arquivo, os comandos registrados em src-tauri/src/lib.rs e as funções que chamam invoke em src/features/*/data/.",
+  "modulo": "calendario",
+  "dono": [
+    "responsabilidade",
+    "evento",
+    "bloco-planejamento",
+    "ocorrencia",
+    "registro-execucao",
+    "camada"
+  ],
+  "comandos": [
+    {
+      "nome": "migrate",
+      "entrada": "{}",
+      "saida": "{ version: number }",
+      "le": [],
+      "escreve": [],
+      "nota": "Aplica as migrations do store acadêmico. Não é regra de domínio e não tem dono: é infraestrutura de persistência."
+    },
+    {
+      "nome": "list_layers",
+      "entrada": "{}",
+      "saida": "LayerWire[]",
+      "le": ["camada"],
+      "escreve": []
+    },
+    {
+      "nome": "set_layer_visibility",
+      "entrada": "{ id: string, visible: boolean }",
+      "saida": "void",
+      "le": ["camada"],
+      "escreve": ["camada"]
+    },
+    {
+      "nome": "list_events_in_window",
+      "entrada": "{ janela: { inicio: Instant, fim: Instant } }",
+      "saida": "GridItem[]",
+      "le": ["evento", "ocorrencia", "responsabilidade", "registro-execucao", "bloco-planejamento"],
+      "escreve": ["ocorrencia"],
+      "nota": "Materializa a recorrência dentro da transação da leitura. Por isso grava ocorrência: é o único comando de leitura que escreve, e é por desenho."
+    },
+    {
+      "nome": "list_responsibilities",
+      "entrada": "{ inicio: Instant | null, fim: Instant | null }",
+      "saida": "ResponsibilityWire[]",
+      "le": ["responsabilidade", "evento", "bloco-planejamento"],
+      "escreve": []
+    },
+    {
+      "nome": "create_event",
+      "entrada": "UpsertEventPayload",
+      "saida": "CalendarEvent",
+      "le": ["camada"],
+      "escreve": ["evento"]
+    },
+    {
+      "nome": "update_event",
+      "entrada": "{ id: string, patch: EventPatch }",
+      "saida": "CalendarEvent",
+      "le": ["evento"],
+      "escreve": ["evento"]
+    },
+    {
+      "nome": "delete_event",
+      "entrada": "{ id: string }",
+      "saida": "void",
+      "le": ["evento", "ocorrencia", "event_recurrence"],
+      "escreve": ["evento"],
+      "nota": "D12: apagar o evento não apaga o registro de execução. Por isso execution_record não tem FK e não está em `le`."
+    },
+    {
+      "nome": "upsert_recurrence",
+      "entrada": "UpsertRecurrencePayload",
+      "saida": "void",
+      "le": ["evento"],
+      "escreve": ["evento"],
+      "nota": "A regra de recorrência mora em Rust (SPEC-D-002, D50..D52). Este comando valida na gravação e rejeita RRULE não entendida."
+    },
+    {
+      "nome": "update_recurrence",
+      "entrada": "{ id: string, patch: RecurrencePatch }",
+      "saida": "void",
+      "le": ["evento"],
+      "escreve": ["evento"]
+    },
+    {
+      "nome": "set_occurrence_state",
+      "entrada": "{ id: string, state: OccurrenceState, motivo?: string }",
+      "saida": "void",
+      "le": ["ocorrencia", "responsabilidade"],
+      "escreve": ["ocorrencia", "responsabilidade"],
+      "nota": "D47: a transição é imposta em Rust e a recusa é do Rust. A tabela de transições é commands.rs:ITEM_TRANSITIONS, com paridade testada em src/lib/__tests__/stateMachineParity.test.ts."
+    },
+    {
+      "nome": "move_occurrence",
+      "entrada": "{ id: string, inicio: Instant, fim: Instant }",
+      "saida": "void",
+      "le": ["ocorrencia"],
+      "escreve": ["ocorrencia"]
+    },
+    {
+      "nome": "create_responsibility",
+      "entrada": "UpsertResponsibilityPayload",
+      "saida": "Responsibility",
+      "le": ["camada"],
+      "escreve": ["responsabilidade"]
+    },
+    {
+      "nome": "set_step_state",
+      "entrada": "{ id: string, state: StepState }",
+      "saida": "ResponsibilityStep",
+      "le": ["responsabilidade"],
+      "escreve": ["responsabilidade"],
+      "nota": "A etapa é parte da obrigação: escreve no dono responsabilidade, não em um dono etapa."
+    },
+    {
+      "nome": "plan_block",
+      "entrada": "UpsertBlockPayload",
+      "saida": "void",
+      "le": ["responsabilidade", "camada"],
+      "escreve": ["bloco-planejamento"],
+      "nota": "INV-1: bloco de planejamento nunca cria obrigação. O payload exige responsibilityId não opcional e o schema tem NOT NULL em plan_block.responsibility_id."
+    },
+    {
+      "nome": "reschedule_block",
+      "entrada": "{ id: string, inicio: Instant, fim: Instant }",
+      "saida": "void",
+      "le": ["bloco-planejamento"],
+      "escreve": ["bloco-planejamento"]
+    },
+    {
+      "nome": "set_item_state",
+      "entrada": "{ id: string, state: ItemState }",
+      "saida": "void",
+      "le": ["responsabilidade"],
+      "escreve": ["responsabilidade"],
+      "nota": "D47: mesma tabela de transições de set_occurrence_state."
+    },
+    {
+      "nome": "complete_item",
+      "entrada": "{ id: string, registro: RecordExecutionPayload }",
+      "saida": "void",
+      "le": ["responsabilidade", "ocorrencia"],
+      "escreve": ["responsabilidade", "registro-execucao"],
+      "nota": "INV-3: concluir exige registro de execução. O payload de registro não é opcional."
+    },
+    {
+      "nome": "record_execution",
+      "entrada": "RecordExecutionPayload",
+      "saida": "void",
+      "le": ["responsabilidade", "ocorrencia"],
+      "escreve": ["registro-execucao"],
+      "nota": "D12: o registro é append-only e sem FK para o alvo."
+    }
+  ]
+}

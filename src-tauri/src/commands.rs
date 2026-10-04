@@ -44,7 +44,21 @@ use rusqlite::{OptionalExtension, Transaction, params};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::db::{Db, DbError};
+use crate::db::{DbError, StoreAcademico as Db};
+
+// ---------------------------------------------------------------------------
+// `Db` é apelido de `StoreAcademico`, e o apelido é o ponto.
+//
+// `SPEC-D-013` `D88` exige três stores por domínio, e a separação é feita com
+// **tipos distintos** para que um comando do acadêmico não compile se pedir o
+// store clínico. Este arquivo inteiro é o módulo do Calendário, que é do domínio
+// acadêmico: escrever `StoreAcademico` em 47 assinaturas não acrescentaria nada, e
+// o apelido deixa explícito na primeira linha que **aqui só existe store
+// acadêmico**.
+//
+// Se um comando deste arquivo precisar de dado clínico, isso não é um `Db` — é um
+// `StoreClinico`, e ele não nasce aqui.
+// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // Janela e utilitários
@@ -96,8 +110,11 @@ pub struct MigrateResult {
 }
 
 pub fn migrate_core(db: &Db) -> Result<MigrateResult, DbError> {
+    // `SPEC-D-013` `D88`: cada store tem a **sua** versão, e a migration de um
+    // store não é a migration de outro. Por isso `schema_version` e não
+    // `migrate` — o nome antigo sugeria que havia uma base só.
     Ok(MigrateResult {
-        version: db.migrate()?,
+        version: db.schema_version()?,
     })
 }
 
@@ -1698,6 +1715,65 @@ pub struct CompleteItem {
     pub record: Option<ExecutionInput>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetItemState {
+    pub target: Target,
+    pub state: String,
+}
+
+/// Grava uma transição de estado que **não** é conclusão.
+///
+/// Antes, os únicos estados alcançáveis por comando eram `planejado`
+/// (criação), `em_andamento` (`record_execution`) e `concluido`
+/// (`complete_item`). `adiado`, `nao_realizado`, `cancelado` e `dispensado`
+/// estavam na tabela de §3.1 e no schema, e nenhuma escrita os alcançava — a
+/// máquina de estados tinha quatro estados inalcançáveis.
+///
+/// **INV-3 não é contornável por aqui.** `concluido` é recusado com uma
+/// mensagem que aponta para `complete_item`: concluir exige o registro do que
+/// foi feito, e um comando genérico de estado que aceitasse `concluido` seria
+/// um caminho para concluir sem registro. Existe exatamente **um** caminho que
+/// conclui, e ele exige o registro.
+pub fn set_item_state_core(db: &Db, payload: SetItemState) -> Result<(), DbError> {
+    let to = payload.state.as_str();
+    if to == "concluido" {
+        return Err(DbError::Domain(
+            "concluir exige o registro de execução: use complete_item (INV-3)".into(),
+        ));
+    }
+    let table = match payload.target.kind.as_str() {
+        "occurrence" => "event_occurrence",
+        "responsibility" => "responsibility",
+        "block" => "plan_block",
+        other => {
+            return Err(DbError::Domain(format!(
+                "alvo de transição desconhecido: {other}"
+            )));
+        }
+    };
+    let now = now_ms()?;
+    db.write(|tx| {
+        guard_transition(tx, table, &payload.target.id, to)?;
+        let affected = tx.execute(
+            &format!("UPDATE {table} SET state = ?1, updated_at = ?2 WHERE id = ?3"),
+            params![to, now, payload.target.id],
+        )?;
+        if affected == 0 {
+            return Err(DbError::Domain(format!(
+                "alvo {}/{} não encontrado",
+                payload.target.kind, payload.target.id
+            )));
+        }
+        Ok(())
+    })
+}
+
+#[tauri::command]
+pub fn set_item_state(db: tauri::State<'_, Db>, payload: SetItemState) -> Result<(), DbError> {
+    set_item_state_core(&db, payload)
+}
+
 /// INV-3: concluir exige o registro do que foi feito. Sem `record`, a função
 /// recusa **antes** de qualquer escrita — nem estado, nem histórico.
 pub fn complete_item_core(db: &Db, payload: CompleteItem) -> Result<(), DbError> {
@@ -1743,6 +1819,35 @@ pub fn record_execution(
 // 19. Settings
 // ---------------------------------------------------------------------------
 
+/// `D87` — a chave de configuração é uma **literal de Rust**, e é a mesma lista
+/// que o `CHECK` da coluna `chave` em `0003_usuario.sql` e que o manifest
+/// `contracts/usuario.json` declaram.
+///
+/// Antes these funções liam `setting`, uma chave-valor genérica que a `0003`
+/// aposentou. Duas razones, e a segunda é a que dói:
+///
+/// 1. `key: String` aceitava qualquer coisa, e `CHECK` é o que impede.
+/// 2. `get_setting_core` fazia `serde_json::from_str(&raw).unwrap_or(Value::Null)`:
+///    leitura corrompida virava **ausente**, e a usuária recebia o default sem
+///    nunca saber que o valor dela tinha sumido. Aqui, JSON inválido é erro.
+const CHAVES_DE_CONFIGURACAO: &[&str] = &[
+    "regra_media.padrao",
+    "fsrs.retencao_desejada",
+    "google.integracao",
+    "aparencia",
+    "sincronizacao",
+];
+
+fn chave_de_configuracao_conhecida(chave: &str) -> Result<(), DbError> {
+    if CHAVES_DE_CONFIGURACAO.contains(&chave) {
+        return Ok(());
+    }
+    Err(DbError::Domain(format!(
+        "configuração desconhecida: {chave}. As declaradas são: {}",
+        CHAVES_DE_CONFIGURACAO.join(", ")
+    )))
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SettingKey {
@@ -1757,17 +1862,25 @@ pub struct SettingValue {
 }
 
 pub fn get_setting_core(db: &Db, payload: SettingKey) -> Result<Option<SettingValue>, DbError> {
+    chave_de_configuracao_conhecida(&payload.key)?;
     let conn = db.conn()?;
     let found = conn
         .query_row(
-            "SELECT key, value_json FROM setting WHERE key = ?1",
+            "SELECT chave, valor_json FROM configuracao WHERE chave = ?1",
             params![payload.key],
             |r| {
+                let chave: String = r.get(0)?;
                 let raw: String = r.get(1)?;
-                Ok(SettingValue {
-                    key: r.get(0)?,
-                    value: serde_json::from_str(&raw).unwrap_or(serde_json::Value::Null),
-                })
+                // `D87` — JSON inválido é erro nomeado, não `Null`. `unwrap_or` aqui
+                // era o que fazia preferência corrompida virar preferência ausente.
+                let value = serde_json::from_str(&raw).map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        raw.len(),
+                        rusqlite::types::Type::Text,
+                        Box::new(e),
+                    )
+                })?;
+                Ok(SettingValue { key: chave, value })
             },
         )
         .optional()?;
@@ -1790,12 +1903,18 @@ pub struct SetSetting {
 }
 
 pub fn set_setting_core(db: &Db, payload: SetSetting) -> Result<(), DbError> {
+    chave_de_configuracao_conhecida(&payload.key)?;
     let raw = serde_json::to_string(&payload.value)
-        .map_err(|e| DbError::Domain(format!("valor de setting não serializa: {e}")))?;
+        .map_err(|e| DbError::Domain(format!("valor de configuração não serializa: {e}")))?;
     db.write(|tx| {
+        // `ON CONFLICT DO UPDATE` e não `INSERT OR REPLACE`: `REPLACE` apaga a
+        // linha e reinsere, o que zera qualquer coluna que a tabela venha a ter.
+        // Aqui não há outra coluna ainda, e o padrão não é o que quebra quando a
+        // houver.
         tx.execute(
-            "INSERT INTO setting (key, value_json) VALUES (?1, ?2)
-             ON CONFLICT (key) DO UPDATE SET value_json = excluded.value_json",
+            "INSERT INTO configuracao (chave, valor_json, atualizado_em)
+             VALUES (?1, ?2, 0)
+             ON CONFLICT (chave) DO UPDATE SET valor_json = excluded.valor_json",
             params![payload.key, raw],
         )?;
         Ok(())
@@ -2064,6 +2183,110 @@ mod tests {
                 );
             }
         }
+    }
+
+    fn set_state(db: &Db, kind: &str, id: &str, to: &str) -> Result<(), DbError> {
+        set_item_state_core(
+            db,
+            SetItemState {
+                target: Target {
+                    kind: kind.into(),
+                    id: id.into(),
+                },
+                state: to.into(),
+            },
+        )
+    }
+
+    /// Antes de `set_item_state`, `adiado`, `nao_realizado`, `cancelado` e
+    /// `dispensado` estavam na tabela de §3.1 e no schema, e nenhuma escrita os
+    /// alcançava: a máquina de estados tinha quatro estados inalcançáveis.
+    #[test]
+    fn set_item_state_alcanca_os_estados_que_ninguem_alcancava() {
+        for (de, para) in [
+            ("planejado", "adiado"),
+            ("planejado", "nao_realizado"),
+            ("planejado", "cancelado"),
+            ("planejado", "dispensado"),
+        ] {
+            let (db, resp) = responsibility_em(de);
+            set_state(&db, "responsibility", &resp.id, para)
+                .unwrap_or_else(|e| panic!("{de} → {para} deveria ser gravável: {e}"));
+            let atual: String = db
+                .conn()
+                .unwrap()
+                .query_row(
+                    "SELECT state FROM responsibility WHERE id = ?1",
+                    params![resp.id],
+                    |r| r.get(0),
+                )
+                .expect("lê estado");
+            assert_eq!(atual, para, "{de} → {para} não foi gravado");
+        }
+    }
+
+    /// INV-3 por este caminho é impossível por construção: `concluido` é
+    /// recusado e a mensagem aponta para o comando que exige o registro.
+    #[test]
+    fn set_item_state_nao_contorna_inv_3() {
+        let (db, resp) = responsibility_em("planejado");
+        let err = set_state(&db, "responsibility", &resp.id, "concluido")
+            .expect_err("concluir por aqui burlaria INV-3");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("INV-3") && msg.contains("complete_item"),
+            "a mensagem diz por que e o que usar: {msg}"
+        );
+        // E nada foi gravado.
+        let atual: String = db
+            .conn()
+            .unwrap()
+            .query_row(
+                "SELECT state FROM responsibility WHERE id = ?1",
+                params![resp.id],
+                |r| r.get(0),
+            )
+            .expect("lê estado");
+        assert_eq!(atual, "planejado", "a recusa não gravou nada");
+    }
+
+    #[test]
+    fn set_item_state_obedece_a_tabela_de_transicoes() {
+        let (db, resp) = responsibility_em("dispensado");
+        set_state(&db, "responsibility", &resp.id, "concluido").expect_err("recusado já por INV-3");
+        set_state(&db, "responsibility", &resp.id, "em_andamento")
+            .expect_err("dispensado → em_andamento não está na tabela");
+    }
+
+    #[test]
+    fn set_item_state_recusa_alvo_inexistente() {
+        let db = Db::open_in_memory().expect("banco");
+        let err =
+            set_state(&db, "responsibility", "nao-existe", "adiado").expect_err("alvo ausente");
+        assert!(err.to_string().contains("não encontrado"), "{err}");
+    }
+
+    #[test]
+    fn set_item_state_recusa_kind_desconhecido() {
+        let db = Db::open_in_memory().expect("banco");
+        let err = set_state(&db, "planeta", "x", "adiado").expect_err("kind desconhecido");
+        assert!(
+            err.to_string().contains("alvo de transição desconhecido"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn reativar_e_reatrair_o_que_a_tabela_permite() {
+        // `cancelado → planejado` e `dispensado → planejado` são as duas
+        // reativações que §4 permite explicitamente.
+        for (de, via) in [("cancelado", "reativar"), ("dispensado", "reativar")] {
+            let (db, resp) = responsibility_em(de);
+            set_state(&db, "responsibility", &resp.id, "planejado").expect(via);
+        }
+        // E `concluido` volta para `em_andamento`, a única saída dele.
+        let (db, resp) = responsibility_em("concluido");
+        set_state(&db, "responsibility", &resp.id, "em_andamento").expect("reabrir");
     }
 
     fn event_payload(title: &str) -> UpsertEvent {
@@ -2637,33 +2860,123 @@ mod tests {
         set_setting_core(
             &db,
             SetSetting {
-                key: "locale".into(),
-                value: serde_json::json!("pt-BR"),
+                key: "aparencia".into(),
+                value: serde_json::json!("light"),
             },
         )
         .expect("grava");
         set_setting_core(
             &db,
             SetSetting {
-                key: "locale".into(),
-                value: serde_json::json!("en-US"),
+                key: "aparencia".into(),
+                value: serde_json::json!("dark"),
             },
         )
         .expect("sobrescreve");
         let total: i64 = db
             .conn()
             .unwrap()
-            .query_row("SELECT COUNT(*) FROM setting", [], |r| r.get(0))
+            .query_row("SELECT COUNT(*) FROM configuracao", [], |r| r.get(0))
             .expect("conta");
-        assert_eq!(total, 1);
+        assert_eq!(total, 1, "gravar duas vezes não cria duas linhas");
         let value = get_setting_core(
+            &db,
+            SettingKey {
+                key: "aparencia".into(),
+            },
+        )
+        .expect("lê");
+        assert_eq!(value.expect("presente").value, serde_json::json!("dark"));
+    }
+
+    #[test]
+    fn d87_configuracao_desconhecida_e_recusada() {
+        // A chave é uma literal de Rust e o `CHECK` da coluna é a mesma lista. Uma
+        // chave fora das duas é recusada — e a recusa nomeia as chaves que existem,
+        // porque "configuração desconhecida" sem lista é um erro que a usuária não
+        // sabe corrigir.
+        let db = Db::open_in_memory().expect("banco");
+        let err = set_setting_core(
+            &db,
+            SetSetting {
+                key: "locale".into(),
+                value: serde_json::json!("pt-BR"),
+            },
+        )
+        .expect_err("chave fora da lista é recusada");
+        let mensagem = err.to_string();
+        assert!(
+            mensagem.contains("locale"),
+            "o erro nomeia a chave recusada: {mensagem}"
+        );
+        assert!(
+            mensagem.contains("fsrs.retencao_desejada"),
+            "o erro lista as chaves que existem: {mensagem}"
+        );
+
+        let err = get_setting_core(
             &db,
             SettingKey {
                 key: "locale".into(),
             },
         )
+        .expect_err("leitura de chave desconhecida também recusa");
+        assert!(err.to_string().contains("locale"));
+
+        let total: i64 = db
+            .conn()
+            .unwrap()
+            .query_row("SELECT COUNT(*) FROM configuracao", [], |r| r.get(0))
+            .expect("conta");
+        assert_eq!(total, 0, "chave recusada não grava nada");
+    }
+
+    #[test]
+    fn d87_configuracao_ausente_e_none_e_json_corrompido_e_erro() {
+        let db = Db::open_in_memory().expect("banco");
+
+        // Ausente é `None`, e isso é Different de "presente e vazio": a usuária
+        // que nunca mexeu em aparência não tem nada a recuperar.
+        let ausente = get_setting_core(
+            &db,
+            SettingKey {
+                key: "aparencia".into(),
+            },
+        )
         .expect("lê");
-        assert_eq!(value.expect("presente").value, serde_json::json!("en-US"));
+        assert!(ausente.is_none());
+
+        set_setting_core(
+            &db,
+            SetSetting {
+                key: "aparencia".into(),
+                value: serde_json::json!("dark"),
+            },
+        )
+        .expect("grava");
+
+        // JSON corrompido é **erro**, e não `Null`. A versão anterior fazia
+        // `unwrap_or(Value::Null)`, que transformava dado perdido em dado ausente e
+        // a usuária recebia o default sem nunca saber.
+        db.write(|tx| {
+            tx.execute(
+                "UPDATE configuracao SET valor_json = '{isto não é json' WHERE chave = 'aparencia'",
+                [],
+            )?;
+            Ok(())
+        })
+        .expect("corrompe de propósito");
+
+        let resultado = get_setting_core(
+            &db,
+            SettingKey {
+                key: "aparencia".into(),
+            },
+        );
+        assert!(
+            resultado.is_err(),
+            "configuração corrompida tem de ser erro nomeado, não valor ausente"
+        );
     }
 
     #[test]

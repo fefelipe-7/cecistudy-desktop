@@ -1,0 +1,32 @@
+{
+  "$spec": "SPEC-D-013 D85 e D87",
+  "$descricao": "Manifest de contrato do domínio do usuário. D87: nenhum módulo escreve nas tabelas de identidade e de preferência; o único caminho de escrita é o módulo Configurações, e a regra é imposta em Rust — a lista de chaves é a literal CHAVES_DE_CONFIGURACAO em src-tauri/src/commands.rs e o CHECK da coluna `chave` em 0003_usuario.sql. Os dois comandos abaixo estavam registrados em src-tauri/src/lib.rs sem wrapper em src/features/calendar/data/bridge.ts; o gate npm run gate:contracts acusava isso até src/features/configuracoes/data/bridge.ts existir.",
+  "modulo": "usuario",
+  "dono": ["identidade", "preferencia"],
+  "store": "academico",
+  "chavesDeclaradas": [
+    "regra_media.padrao",
+    "fsrs.retencao_desejada",
+    "google.integracao",
+    "aparencia",
+    "sincronizacao"
+  ],
+  "comandos": [
+    {
+      "nome": "get_setting",
+      "entrada": "SettingKey { key: ChaveDeConfiguracao }",
+      "saida": "SettingValue | null",
+      "le": ["preferencia", "identidade"],
+      "escreve": [],
+      "nota": "commands.rs. Lê a tabela `configuracao`, e a chave é a mesma lista fechada do manifest, do CHECK e da literal em Rust. Chave fora da lista é recusada com mensagem que nomeia as chaves que existem. JSON corrompido é erro nomeado: a versão anterior lia com unwrap_or(Null) e transformava preferência corrompida em preferência ausente. Ausente é null, que é diferente de presente-e-vazio."
+    },
+    {
+      "nome": "set_setting",
+      "entrada": "SetSetting { key: ChaveDeConfiguracao, value: unknown }",
+      "saida": "void",
+      "le": ["preferencia"],
+      "escreve": ["preferencia"],
+      "nota": "Única escrita de preferência do app, por D87. Usa ON CONFLICT DO UPDATE e não INSERT OR REPLACE, porque REPLACE apaga a linha e reinsere."
+    }
+  ]
+}
