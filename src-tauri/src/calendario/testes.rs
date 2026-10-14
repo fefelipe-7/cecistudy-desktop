@@ -5,11 +5,10 @@
 //! do arquivo era **o ponto de corte que o gate usava** para não contar escrita
 //! de teste como caminho de escrita — a fragilidade medida em F8b2.
 //!
-//! Não há `use super::*` aqui, e não é esquecimento: este módulo é filho de
-//! `comandos`, e o Rust coloca no escopo de um módulo aninhado os itens dos
-//! módulos ancestrais. O `glob` seria redundante — e o `clippy -D warnings` do
-//! gate acusa redundância. É essa mesma resolução por escopo que dá ao teste
-//! acesso ao `X_core` privado, que não é `pub` e não precisa ser.
+//! O `use super::*` é o que dá a este arquivo acesso ao `X_core`, que é
+//! privado: um módulo aninhado enxerga o ancestral por caminho, não pelo nome
+//! solto. Tentar remover esse glob dá `E0425 cannot find type` em 94 lugares —
+//! foi o que aconteceu em F2, e é a razão de ele estar aqui e documentado.
 
 use super::*;
 

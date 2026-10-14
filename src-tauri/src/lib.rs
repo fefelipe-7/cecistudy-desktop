@@ -94,9 +94,9 @@ pub fn run() {
     // `check-boundaries.mjs` cruza esta lista com as funções que existem, e
     // recusa registro sem casca, casca sem registro e nome duplicado.
     //
-    // Faculdade, Estudos e TCC ainda apontam para `commands::`, que é o
-    // caminho em migração: F2, F3 e F4 dão a cada um o seu diretório, e F5
-    // apaga `commands.rs`.
+    // Estudos e TCC ainda apontam para `commands::`, que é o caminho em
+    // migração: F3 e F4 dão a cada um o seu diretório, e F5 apaga
+    // `commands.rs`.
     .invoke_handler(tauri::generate_handler![
       // Calendário (spec 01, §3.4)
       calendario::comandos::migrate,
@@ -120,17 +120,17 @@ pub fn run() {
       calendario::comandos::get_setting,
       calendario::comandos::set_setting,
       // Faculdade (SPEC-D-010, D74/D75)
-      commands::list_semestres,
-      commands::list_disciplinas,
-      commands::media_da_disciplina,
-      commands::list_avaliacoes,
-      commands::create_semestre,
-      commands::create_disciplina,
-      commands::create_avaliacao,
-      commands::lancar_nota,
-      commands::set_regra_padrao,
-      commands::set_regra_disciplina,
-      commands::encerrar_semestre,
+      faculdade::comandos::list_semestres,
+      faculdade::comandos::list_disciplinas,
+      faculdade::comandos::media_da_disciplina,
+      faculdade::comandos::list_avaliacoes,
+      faculdade::comandos::create_semestre,
+      faculdade::comandos::create_disciplina,
+      faculdade::comandos::create_avaliacao,
+      faculdade::comandos::lancar_nota,
+      faculdade::comandos::set_regra_padrao,
+      faculdade::comandos::set_regra_disciplina,
+      faculdade::comandos::encerrar_semestre,
       // Estudos (SPEC-D-010, D76)
       commands::create_conteudo,
       commands::create_cartao,

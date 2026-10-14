@@ -13,8 +13,8 @@
 //! ```
 //!
 //! Os testes ficam dentro de `comandos`, e não ao lado: eles alcançam o `X_core`
-//! pela resolução de escopo de um módulo aninhado, e `X_core` não é `pub` — é
-//! essa a razão de eles não ocuparem o arquivo de escrita.
+//! pelo `use super::*` do arquivo de teste, e `X_core` não é `pub` — é essa a
+//! razão de eles não ocuparem o arquivo de escrita.
 //!
 //! A separação entre [`dominio`] e [`comandos`] é a mesma dos outros módulos: o
 //! motor é puro e não toca SQL, o caminho de escrita é o único que sabe de
