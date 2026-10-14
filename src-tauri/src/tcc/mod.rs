@@ -6,6 +6,8 @@
 //! escrita em `commands.rs`.
 //!
 //! - `documento` — a árvore (lista de adjacência ordenada) e o inline (D85).
+//! - `comandos` — o caminho de escrita e leitura: o SQL, a validação da árvore
+//!   contra as garantias do banco, e a gravação da versão (SPEC-D-015 D96).
 //! - `medidor` — a medida de texto injetada; o motor nunca consulta a fonte
 //!   instalada da máquina (D86, `I6`).
 //! - `paginacao` — o motor de paginação puro com geometria parâmetro (D86),
@@ -23,6 +25,7 @@
 //!   a cláusula de `D78` fixa que a revisão vira item `sugestao` com autor,
 //!   data e âncora, e essa leitura é nossa (`D95`).
 
+pub mod comandos;
 pub mod documento;
 pub mod docx;
 pub mod item;

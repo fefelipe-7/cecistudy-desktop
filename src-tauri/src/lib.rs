@@ -45,7 +45,6 @@ pub mod estudos;
 // TCC & Projetos (SPEC-D-013, D85..D88): o modelo do documento, o motor de
 // paginação puro e a lista de decisão da importação. Fonte de verdade ao lado da
 // migração `0005_tcc.sql`; consumido pelo caminho de escrita em `tcc/comandos.rs`.
-mod commands;
 pub mod nucleo;
 pub mod tcc;
 
@@ -135,20 +134,20 @@ pub fn run() {
       estudos::comandos::create_cartao,
       estudos::comandos::fila_do_dia,
       estudos::comandos::revisar_cartao,
-      // TCC & Projetos (SPEC-D-013, D85..D88)
-      commands::list_projetos,
-      commands::create_projeto,
-      commands::set_estado_projeto,
-      commands::get_documento,
-      commands::get_documento_do_projeto,
-      commands::paginar_documento,
-      commands::salvar_documento,
-      commands::registrar_item,
-      commands::resolver_item,
-      commands::list_itens,
-      commands::list_base,
-      commands::vincular,
-      commands::desvincular,
+      // TCC & Projetos (SPEC-D-011, SPEC-D-013, D85..D88)
+      tcc::comandos::list_projetos,
+      tcc::comandos::create_projeto,
+      tcc::comandos::set_estado_projeto,
+      tcc::comandos::get_documento,
+      tcc::comandos::get_documento_do_projeto,
+      tcc::comandos::paginar_documento,
+      tcc::comandos::salvar_documento,
+      tcc::comandos::registrar_item,
+      tcc::comandos::resolver_item,
+      tcc::comandos::list_itens,
+      tcc::comandos::list_base,
+      tcc::comandos::vincular,
+      tcc::comandos::desvincular,
     ])
     .run(tauri::generate_context!())
     .expect("erro ao iniciar a aplicação Tauri");

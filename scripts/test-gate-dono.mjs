@@ -17,7 +17,7 @@
  * Uso: `npm run test:gate`
  */
 
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -49,16 +49,23 @@ function rodarGate(dir) {
   }
 }
 
-/** Insere um trecho no corpo de produção, antes do primeiro `mod` de teste. */
+/**
+ * Insere um trecho no corpo de produção de um arquivo de escrita.
+ *
+ * Se ainda houver `#[cfg(test)] mod … {` no arquivo, insere antes dele — o
+ * gate corta ali e não contaria escrita de teste. Depois da migração (F1..F5) o
+ * teste vive em `<módulo>/testes.rs` e o arquivo de escrita não tem mais corte,
+ * então a inserção vai ao fim, que ainda é produção.
+ */
 function inserirNoCorpo(fonte, trecho) {
   const linhas = fonte.split("\n");
   for (let i = 0; i < linhas.length; i++) {
-    if (linhas[i].startsWith("#[cfg(test)]") && /^mod\s/.test(linhas[i + 1] ?? "")) {
+    if (linhas[i].startsWith("#[cfg(test)]") && /^mod\s+\w+\s*\{/.test(linhas[i + 1] ?? "")) {
       linhas.splice(i, 0, trecho);
       return linhas.join("\n");
     }
   }
-  throw new Error("não achei o mod de teste para inserir antes");
+  return `${fonte}\n${trecho}`;
 }
 
 /**
@@ -85,52 +92,74 @@ pub fn injetada(db: tauri::State<'_, Db>) -> Result<(), DbError> {
 `;
 }
 
+/**
+ * AViolation vai para o caminho de escrita de um módulo de verdade: a regra 8
+ * tira o dono do **diretório**, então é lá que a violação precisa estar para
+ * provar que a regra o vê.
+ */
+const COMANDOS_DE = ["calendario", "tcc", "estudos", "faculdade"];
+
+function arquivoDeComandos(dir) {
+  for (const modulo of COMANDOS_DE) {
+    const p = join(dir, "src-tauri", "src", modulo, "comandos.rs");
+    if (existsSync(p)) return p;
+  }
+  throw new Error("nenhum <módulo>/comandos.rs no fixture — a migração quebrou?");
+}
+
+/** Registra a injeção na bridge de `faculdade`, para o cruzamento de D67. */
+function registrarNaBridgeDeFaculdade(dir) {
+  const b = join(dir, "src", "features", "faculdade", "data", "bridge.ts");
+  writeFileSync(
+    b,
+    readFileSync(b, "utf8") +
+      '\n\nexport async function injetada(): Promise<void> {\n  await invoke<void>("injetada");\n}\n',
+  );
+}
+
 const casos = [
   {
     nome: "núcleo público gravando tabela de outro dono",
     preparar(dir) {
-      const p = join(dir, "src-tauri", "src", "commands.rs");
+      const p = arquivoDeComandos(dir);
       writeFileSync(p, inserirNoCorpo(readFileSync(p, "utf8"), escritaQueViola("publico")));
-      const b = join(dir, "src", "features", "faculdade", "data", "bridge.ts");
-      writeFileSync(
-        b,
-        readFileSync(b, "utf8") +
-          '\n\nexport async function injetada(): Promise<void> {\n  await invoke<void>("injetada");\n}\n',
-      );
+      registrarNaBridgeDeFaculdade(dir);
     },
     esperado: /`injetada` escreve em tabela de `calendario`/,
   },
   {
     nome: "núcleo privado gravando tabela de outro dono",
     preparar(dir) {
-      const p = join(dir, "src-tauri", "src", "commands.rs");
+      const p = arquivoDeComandos(dir);
       writeFileSync(p, inserirNoCorpo(readFileSync(p, "utf8"), escritaQueViola("privado")));
-      const b = join(dir, "src", "features", "faculdade", "data", "bridge.ts");
-      writeFileSync(
-        b,
-        readFileSync(b, "utf8") +
-          '\n\nexport async function injetada(): Promise<void> {\n  await invoke<void>("injetada");\n}\n',
-      );
+      registrarNaBridgeDeFaculdade(dir);
     },
     esperado: /`injetada` escreve em tabela de `calendario`/,
   },
   {
     nome: "módulo gravando tabela que não é dele",
     preparar(dir) {
+      // `faculdade/comandos.rs` grava `responsibility`, que é do Calendário.
       const mod = join(dir, "src-tauri", "src", "faculdade");
-      cpSync(join(dir, "src-tauri", "src", "tcc", "mod.rs"), join(mod, "comandos.rs"));
       writeFileSync(
         join(mod, "comandos.rs"),
-        `use rusqlite::params;\nuse crate::db::{Db, DbError};\n\n` + escritaQueViola("publico"),
+        `use rusqlite::params;\nuse crate::nucleo::{Db, DbError};\n\n` + escritaQueViola("publico"),
       );
-      const b = join(dir, "src", "features", "faculdade", "data", "bridge.ts");
-      writeFileSync(
-        b,
-        readFileSync(b, "utf8") +
-          '\n\nexport async function injetada(): Promise<void> {\n  await invoke<void>("injetada");\n}\n',
-      );
+      registrarNaBridgeDeFaculdade(dir);
     },
     esperado: /mora em `faculdade\/` e escreve em tabela de `calendario`/,
+  },
+  {
+    nome: "arquivo da raiz do crate escrevendo tabela de módulo",
+    preparar(dir) {
+      const p = join(dir, "src-tauri", "src", "perdido.rs");
+      writeFileSync(
+        p,
+        `use rusqlite::params;\nuse crate::nucleo::{Db, DbError};\n\n` + escritaQueViola("publico"),
+      );
+      registrarNaBridgeDeFaculdade(dir);
+    },
+    esperado: /`perdido\.rs` está na raiz do crate e escreve em tabela de/,
   },
   {
     nome: "casca registrada que não existe",

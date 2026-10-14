@@ -5,10 +5,13 @@
 //! do arquivo era **o ponto de corte que o gate usava** para não contar escrita
 //! de teste como caminho de escrita — a fragilidade medida em F8b2.
 //!
-//! O `use super::*` é o que dá a este arquivo acesso ao `X_core`, que é
-//! privado: um módulo aninhado enxerga o ancestral por caminho, não pelo nome
-//! solto. Tentar remover esse glob dá `E0425 cannot find type` em 94 lugares —
-//! foi o que aconteceu em F2, e é a razão de ele estar aqui e documentado.
+//! O `use super::*` é o que dá a este arquivo acesso ao que `comandos.rs`
+//! importou e ao que ele declarou. Sem o glob o compilador acusa 33
+//! `cannot find type Db`, 23 `cannot find macro params` e 21 `cannot find
+//! function create_event_core`. Foi o que aconteceu em F2, quando o glob
+//! faltava na Faculdade: 94 erros, e a prosa que eu tinha escrito dizendo que
+//! ele era redundante. Um módulo aninhado enxerga o ancestral por caminho, não
+//! pelo nome solto.
 
 use super::*;
 
