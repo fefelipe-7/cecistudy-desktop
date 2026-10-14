@@ -1,0 +1,45 @@
+# golden/media.jsonl - um caso por linha, entrada e saida esperada.
+# Contrato de D74 (SPEC-D-010): o motor e src-tauri/src/materia/media.rs, e este
+# arquivo e o DADO que pina o comportamento - entrada e saida, nunca algoritmo.
+# O teste que le este arquivo mora em media.rs, junto da regra que ele prova, e
+# e ele que roda no gate (`npm run verify` -> cargo test).
+#
+# Diferenca deliberada para o golden de recorrencia: la ha DUAS implementacoes
+# independentes da mesma RFC e o golden e o contrato entre elas. Aqui so ha UMA
+# (o Rust; D74 rejeitou o recalculo no TypeScript), entao os valores esperados
+# sao ARITMETICA DE MAO, escrita abaixo da conta que os produz - e nao saida de
+# rodar o motor. O valor do golden e outro: qualquer mudanca de fronteira
+# (arredondamento, elegibilidade do exame, limite de frequencia) falha o gate
+# alto, em vez de passar silenciosa.
+#
+# Casos obrigatorios por SPEC-D-010 par. 9: o limite de arredondamento (6,95) e
+# a regra congelada (D75/I8). "origem" alimenta o rotulo `regraAplicada`
+# (padrao | personalizada-<semestre> | congelada-<semestre>).
+#
+# Contas de cada caso, a mao:
+#  ponderada-com-pesos     (8*3 + 6*2) / (3+2) = 36/5 = 7,2; freq: limite
+#                          floor(40*0,25) = 10, restante 10-6 = 4.
+#  limite-695-passo-01     (6,0 + 7,9) / 2 = 6,95 cru; passo 0,1 arredonda
+#                          6,95 -> 7,0 e 7,0 >= 7,0 aprova (I4).
+#  limite-695-passo-001    passo 0,01 nao arredonda: 6,95 < 7,0, sem pendente,
+#                          sem exame -> nao-alcanca.
+#  precisa-tirar-na-proxima (4 + x)/2 >= 6 -> x = 8,0; teto(8,0; 0,1) = 8,0.
+#  so-com-exame-recuperacao media 5,0 < 6,0, elegivel (5 >= 4); recuperacao
+#                          por media: (5 + x)/2 >= 6 -> x = 7,0.
+#  exame-substitui         media 5,0, elegivel; o exame vale por si: x = 6,0.
+#  reprova-por-frequencia  11 faltas > limite 10 -> nao-alcanca, restante 0.
+#  sem-notas               nenhum lancamento: media indefinida, e "sem-notas"
+#                          NAO e "nao-alcanca" - sem nota nao se reprova.
+#  congelada-2026-1        D75/I8: 7,5 < 8,0 da regra congelada do semestre;
+#                          mudar o padrao depois nao move este caso.
+#  personalizada-2026-2   7,5 >= 7,0 da personalizacao por inteiro (D75).
+{"caso":"ponderada-com-pesos","entrada":{"origem":"padrao","semestreId":"2026-2","regra":{"tipoDeCalculo":"ponderada","notaMinima":6.0,"arredondamento":0.1,"frequenciaMinima":0.75,"exameModo":"nenhum","exameMinima":6.0,"exameElegivelMinima":4.0},"avaliacoes":[{"peso":3.0,"valeNota":true,"nota":8.0},{"peso":2.0,"valeNota":true,"nota":6.0}],"frequencia":{"totalAulas":40,"faltas":6}},"saida":{"media":7.2,"mediaSemArredondamento":7.2,"situacao":"aprovada","notaNecessariaProxima":null,"frequenciaRestante":4,"regraAplicada":"padrao"}}
+{"caso":"limite-695-passo-01","entrada":{"origem":"padrao","semestreId":"2026-2","regra":{"tipoDeCalculo":"simples","notaMinima":7.0,"arredondamento":0.1,"frequenciaMinima":0.75,"exameModo":"nenhum","exameMinima":6.0,"exameElegivelMinima":4.0},"avaliacoes":[{"peso":1.0,"valeNota":true,"nota":6.0},{"peso":1.0,"valeNota":true,"nota":7.9}],"frequencia":null},"saida":{"media":7.0,"mediaSemArredondamento":6.95,"situacao":"aprovada","notaNecessariaProxima":null,"frequenciaRestante":null,"regraAplicada":"padrao"}}
+{"caso":"limite-695-passo-001","entrada":{"origem":"padrao","semestreId":"2026-2","regra":{"tipoDeCalculo":"simples","notaMinima":7.0,"arredondamento":0.01,"frequenciaMinima":0.75,"exameModo":"nenhum","exameMinima":6.0,"exameElegivelMinima":4.0},"avaliacoes":[{"peso":1.0,"valeNota":true,"nota":6.0},{"peso":1.0,"valeNota":true,"nota":7.9}],"frequencia":null},"saida":{"media":6.95,"mediaSemArredondamento":6.95,"situacao":"nao-alcanca","notaNecessariaProxima":null,"frequenciaRestante":null,"regraAplicada":"padrao"}}
+{"caso":"precisa-tirar-na-proxima","entrada":{"origem":"padrao","semestreId":"2026-2","regra":{"tipoDeCalculo":"simples","notaMinima":6.0,"arredondamento":0.1,"frequenciaMinima":0.75,"exameModo":"nenhum","exameMinima":6.0,"exameElegivelMinima":4.0},"avaliacoes":[{"peso":1.0,"valeNota":true,"nota":4.0},{"peso":1.0,"valeNota":true,"nota":null}],"frequencia":null},"saida":{"media":4.0,"mediaSemArredondamento":4.0,"situacao":"precisa-tirar","notaNecessariaProxima":8.0,"frequenciaRestante":null,"regraAplicada":"padrao"}}
+{"caso":"so-com-exame-recuperacao","entrada":{"origem":"padrao","semestreId":"2026-2","regra":{"tipoDeCalculo":"simples","notaMinima":6.0,"arredondamento":0.1,"frequenciaMinima":0.75,"exameModo":"recuperacao","exameMinima":6.0,"exameElegivelMinima":4.0},"avaliacoes":[{"peso":1.0,"valeNota":true,"nota":5.0}],"frequencia":null},"saida":{"media":5.0,"mediaSemArredondamento":5.0,"situacao":"so-com-exame","notaNecessariaProxima":7.0,"frequenciaRestante":null,"regraAplicada":"padrao"}}
+{"caso":"exame-substitui","entrada":{"origem":"padrao","semestreId":"2026-2","regra":{"tipoDeCalculo":"simples","notaMinima":6.0,"arredondamento":0.1,"frequenciaMinima":0.75,"exameModo":"substitui","exameMinima":6.0,"exameElegivelMinima":4.0},"avaliacoes":[{"peso":1.0,"valeNota":true,"nota":5.0}],"frequencia":null},"saida":{"media":5.0,"mediaSemArredondamento":5.0,"situacao":"so-com-exame","notaNecessariaProxima":6.0,"frequenciaRestante":null,"regraAplicada":"padrao"}}
+{"caso":"reprova-por-frequencia","entrada":{"origem":"padrao","semestreId":"2026-2","regra":{"tipoDeCalculo":"simples","notaMinima":6.0,"arredondamento":0.1,"frequenciaMinima":0.75,"exameModo":"nenhum","exameMinima":6.0,"exameElegivelMinima":4.0},"avaliacoes":[{"peso":1.0,"valeNota":true,"nota":8.0}],"frequencia":{"totalAulas":40,"faltas":11}},"saida":{"media":8.0,"mediaSemArredondamento":8.0,"situacao":"nao-alcanca","notaNecessariaProxima":null,"frequenciaRestante":0,"regraAplicada":"padrao"}}
+{"caso":"sem-notas","entrada":{"origem":"padrao","semestreId":"2026-2","regra":{"tipoDeCalculo":"ponderada","notaMinima":6.0,"arredondamento":0.1,"frequenciaMinima":0.75,"exameModo":"nenhum","exameMinima":6.0,"exameElegivelMinima":4.0},"avaliacoes":[{"peso":1.0,"valeNota":true,"nota":null},{"peso":2.0,"valeNota":true,"nota":null}],"frequencia":{"totalAulas":40,"faltas":0}},"saida":{"media":null,"mediaSemArredondamento":null,"situacao":"sem-notas","notaNecessariaProxima":null,"frequenciaRestante":10,"regraAplicada":"padrao"}}
+{"caso":"congelada-2026-1","entrada":{"origem":"congelada","semestreId":"2026-1","regra":{"tipoDeCalculo":"simples","notaMinima":8.0,"arredondamento":0.1,"frequenciaMinima":0.75,"exameModo":"nenhum","exameMinima":6.0,"exameElegivelMinima":4.0},"avaliacoes":[{"peso":1.0,"valeNota":true,"nota":7.5}],"frequencia":null},"saida":{"media":7.5,"mediaSemArredondamento":7.5,"situacao":"nao-alcanca","notaNecessariaProxima":null,"frequenciaRestante":null,"regraAplicada":"congelada-2026-1"}}
+{"caso":"personalizada-2026-2","entrada":{"origem":"personalizada","semestreId":"2026-2","regra":{"tipoDeCalculo":"simples","notaMinima":7.0,"arredondamento":0.1,"frequenciaMinima":0.75,"exameModo":"nenhum","exameMinima":6.0,"exameElegivelMinima":4.0},"avaliacoes":[{"peso":1.0,"valeNota":true,"nota":7.5}],"frequencia":null},"saida":{"media":7.5,"mediaSemArredondamento":7.5,"situacao":"aprovada","notaNecessariaProxima":null,"frequenciaRestante":null,"regraAplicada":"personalizada-2026-2"}}

@@ -1,0 +1,46 @@
+# golden/fsrs.jsonl - um caso por linha, entrada e saida esperada.
+# Contrato de D76 (SPEC-D-010): o motor e a crate `fsrs` (6.6.2, BSD-3-Clause),
+# e a ADAPTACAO ao produto mora em src-tauri/src/estudos/fsrs.rs - forma do
+# estado, regra de relearning, vencimento por dia com ancora de fuso. Este
+# arquivo e o DADO que pina o comportamento - entrada e saida, nunca algoritmo.
+# O teste que le este arquivo mora em fsrs.rs, junto da regra que ele prova, e
+# e ele que roda no gate (`npm run verify` -> cargo test).
+#
+# Diferenca deliberada para os outros goldens: nao ha aritmetica de mao aqui.
+# Hand-rolar a estabilidade do FSRS seria reimplementar o modelo, o que D76
+# rejeita na alternativa (a). Os valores vem da PROPRIA crate, e o valor do
+# pin e outro: um bump da `fsrs` que mude agendamento fala ALTO no gate, em
+# vez de passar silencioso. O bump e deliberado - para regenerar:
+#
+#   cargo test --lib --no-default-features regenerar -- --ignored --nocapture
+#
+# e escrever a saida aqui (ver `regenerar_o_golden_do_fsrs` em fsrs.rs).
+#
+# Casos obrigatorios por SPEC-D-010 par. 9: >= 6 casos, o vencimento com ancora
+# de fuso (I11) e o marcador de relearning.
+#
+# O que cada caso pina:
+#  nova-e-good-090        primeiro agendamento "bom": estabilidade/dificuldade
+#                         iniciais e intervalo 2 na retencao 0,9.
+#  nova-e-hard-090        nota baixa sem history: intervalo minimo 1.
+#  nova-e-easy-090        nota alta inicial: intervalo 8.
+#  nova-e-again-090       primeiro "again" NAO entra em relearning - nao havia
+#                         memoria a perder (a regra e do cartao com historico).
+#  revisada-good-090      7 dias depois de estabilidade 7: o intervalo cresce
+#                         para 23 - o motor alonga a serie, nao recomeca.
+#  revisada-again-090     queda de novo: relearning true, intervalo 1.
+#  relearning-good-090    saida do relearning: o marcador cai e o intervalo
+#                         volta a crescer (4).
+#  vencimento-na-ancora-SP revisao as 2026-10-10T02:00Z = 2026-10-09 23:00 em
+#                         Sao Paulo: o vencimento soma a data CIVIL LOCAL
+#                         (2026-10-09 + 2 = 2026-10-11). Em UTC seria
+#                         2026-10-12 - exatamente o deslocamento que I11
+#                         proibe.
+{"caso":"nova-e-good-090","entrada":{"estado":null,"rating":3,"retencao":0.9,"agoraMs":1791633600000,"zona":"America/Sao_Paulo"},"saida":{"estabilidade":2.30649995803833,"dificuldade":2.1181039810180664,"intervaloDias":2,"relearning":false,"vencimento":"2026-10-12"}}
+{"caso":"nova-e-hard-090","entrada":{"estado":null,"rating":2,"retencao":0.9,"agoraMs":1791633600000,"zona":"America/Sao_Paulo"},"saida":{"estabilidade":1.2930999994277954,"dificuldade":5.112170696258545,"intervaloDias":1,"relearning":false,"vencimento":"2026-10-11"}}
+{"caso":"nova-e-easy-090","entrada":{"estado":null,"rating":4,"retencao":0.9,"agoraMs":1791633600000,"zona":"America/Sao_Paulo"},"saida":{"estabilidade":8.295599937438965,"dificuldade":1.0,"intervaloDias":8,"relearning":false,"vencimento":"2026-10-18"}}
+{"caso":"nova-e-again-090","entrada":{"estado":null,"rating":1,"retencao":0.9,"agoraMs":1791633600000,"zona":"America/Sao_Paulo"},"saida":{"estabilidade":0.21199999749660492,"dificuldade":6.413300037384033,"intervaloDias":1,"relearning":false,"vencimento":"2026-10-11"}}
+{"caso":"revisada-good-090","entrada":{"estado":{"estabilidade":7.0,"dificuldade":5.0,"ultimaRevisao":1791028800000,"intervaloDias":7,"relearning":false},"rating":3,"retencao":0.9,"agoraMs":1791633600000,"zona":"America/Sao_Paulo"},"saida":{"estabilidade":23.36270523071289,"dificuldade":4.990228176116943,"intervaloDias":23,"relearning":false,"vencimento":"2026-11-02"}}
+{"caso":"revisada-again-090","entrada":{"estado":{"estabilidade":7.0,"dificuldade":5.0,"ultimaRevisao":1791028800000,"intervaloDias":7,"relearning":false},"rating":1,"retencao":0.9,"agoraMs":1791633600000,"zona":"America/Sao_Paulo"},"saida":{"estabilidade":1.1529189348220825,"dificuldade":8.34176254272461,"intervaloDias":1,"relearning":true,"vencimento":"2026-10-11"}}
+{"caso":"relearning-good-090","entrada":{"estado":{"estabilidade":2.0,"dificuldade":7.0,"ultimaRevisao":1791547200000,"intervaloDias":1,"relearning":true},"rating":3,"retencao":0.9,"agoraMs":1791633600000,"zona":"America/Sao_Paulo"},"saida":{"estabilidade":4.253935813903809,"dificuldade":6.9882283210754395,"intervaloDias":4,"relearning":false,"vencimento":"2026-10-14"}}
+{"caso":"vencimento-na-ancora-SP","entrada":{"estado":null,"rating":3,"retencao":0.9,"agoraMs":1791597600000,"zona":"America/Sao_Paulo"},"saida":{"estabilidade":2.30649995803833,"dificuldade":2.1181039810180664,"intervaloDias":2,"relearning":false,"vencimento":"2026-10-11"}}

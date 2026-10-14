@@ -1,25 +1,19 @@
 name: ci
 
-# Gate do Campus. Débito C8 do grupo: havia testes TypeScript e Rust escritos,
-# **nenhum** script `test` e nenhuma CI — ou seja, testes que ninguém rodava. Este
-# arquivo é o que transforma regra em garantia.
+# Gate de PR do desktop. Roda `npm run verify`, que é o gate único declarado no
+# `AGENTS.md` §`Commands`: typecheck, lint, test, test:golden, check:boundaries,
+# e os quatro de Rust (domínio, clippy, fmt, shell).
 #
-# A contagem de testes **não** está aqui de propósito. Ela envelhece e vira
-# mentira; o número que vale é o que `npm run test` imprime no fim da execução.
+# Uma diferença importante em relação ao host de desenvolvimento: aqui o Rust
+# **linka sem esforço nenhum**, porque `ubuntu-latest` tem compilador de C. É por
+# isso que a barreira da máquina local nunca foi a barreira do CI — a D63 da
+# `SPEC-D-005` registra que o bloqueio real era o WebView2 e o compilador, e
+# nenhum dos dois existe aqui.
 #
-# O que roda, e por quê:
-#   typecheck + lint   → o TypeScript compila e segue o estilo do projeto
-#   test (Node)        → os testes de domínio, sem toolchain Rust
-#   test:rust          → os testes do backend, que é onde a regra de domínio mora
-#   lint:rust/fmt:rust → clippy com `-D warnings` e rustfmt, para o gate Rust não
-#                        apodrecer em silêncio
-#   gate:boundary      → fronteiras viradas em código executável
-#   gate:modules       → o registro de módulos é a lista fechada de §2 do
-#                        referencial (SPEC-D-013 D83)
-#   gate:contracts     → manifest, Rust e TypeScript falam o mesmo contrato
-#                        (SPEC-D-013 D85)
-#
-# `npm run gate` é o mesmo encadeamento, para rodar localmente antes do push.
+# Consequência: `--no-default-features` no gate de domínio é o que impede o
+# binário de teste de linkar `WebView2Loader.dll`. Em Linux o erro seria outro
+# (a `WebView2Loader.dll` nem existe), mas a regra é a mesma — a casca do Tauri
+# fica fora do caminho do domínio.
 
 on:
   push:
@@ -27,86 +21,43 @@ on:
   pull_request:
     branches: [main]
 
-# Segue o padrão do mobile: um push na main cancela o run anterior da mesma
-# branch, porque o valor está no resultado final, não em cada tentativa.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   verify:
-    name: verify
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
-          cache: npm
+
+      # `rust-toolchain.toml` **não** é versionado de propósito: fixar o canal
+      # `x86_64-pc-windows-gnu` quebraria este runner. O toolchain do CI é o
+      # default da toolchain action, e o host de desenvolvimento usa
+      # `rustup override` (ver AGENTS.md §`Toolchain`).
+      - name: install Rust
+        run: rustup toolchain install stable --profile minimal --component clippy,rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
 
       - name: install deps
         run: npm ci
 
-      - name: instalar toolchain Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      # Dependências de sistema do Tauri v2 no Linux. Sem elas o `cargo test`
-      # não compila o `webkit2gtk-sys`, e o gate Rust passa a ser decorativo —
-      # foi exatamente o que aconteceu antes deste workflow existir.
-      - name: dependências de sistema do Tauri
+      - name: install build deps of the shell
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libssl-dev \
-            libxdo-dev
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev \
+            librsvg2-dev patchelf
 
-      # Cache do alvo do cargo: compilar o Tauri do zero é o item mais lento
-      # deste workflow.
-      - name: cache cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src-tauri/target
-          key: cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
-          restore-keys: cargo-
-
-      - name: typecheck
-        run: npm run typecheck
-
-      - name: lint
-        run: npm run lint
-
-      - name: test (domínio TypeScript)
-        run: npm run test
-
-      - name: test (backend Rust)
-        run: npm run test:rust
-
-      - name: clippy (Rust, -D warnings)
-        run: npm run lint:rust
-
-      - name: rustfmt --check
-        run: npm run fmt:rust
-
-      - name: boundary check
-        run: npm run gate:boundary
-
-      # O registro de módulos é a lista fechada de §2 da spec referencial. Sem
-      # este passo, um nome de módulo pode ser inventado em qualquer arquivo.
-      - name: registro de módulos
-        run: npm run gate:modules
-
-      # Paridade entre o manifest, o que o Rust registra e o que o TypeScript
-      # invoca. Sem este passo, `lib.rs` pode prometer nomes que ninguém consome —
-      # que é o que `lib.rs:37-39` fazia.
-      - name: contrato Rust/TypeScript
-        run: npm run gate:contracts
+      # O gate único. Um passo só porque a lista no `AGENTS.md` e a lista do
+      # `verify` têm que ser a mesma — e é o `verify` que decide.
+      - name: verify
+        run: npm run verify

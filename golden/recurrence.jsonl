@@ -1,0 +1,25 @@
+# golden/recurrence.jsonl — um caso por linha, entrada e saida esperada.
+# Contrato da D61 (SPEC-D-005): o Rust (src-tauri/, crate `rrule`) e o espelho em
+# src/features/calendar/domain/recurrence.ts (pacote `rrule`) tem de dar a MESMA
+# saida para o mesmo caso. Os dois lados sao implementacoes independentes de RFC
+# 5545 — e e por isso que este golden nao pode ser gerado a mao.
+# As saidas sao DIAS a partir da ancora: o instante absoluto depende da ancora e o
+# golden tem de ser legivel numa review.
+#
+# Decisao de dado que o golden fixa (RFC 5545 §3.3.10): data invalida e IGNORADA e
+# nao conta. `FREQ=MONTHLY` com ancora no dia 31 PULA fevereiro, e nao limita ao
+# dia 28. Uma versao anterior deste golden dizia o contrario, porque tinha sido
+# gerada por aritmetica propria em vez de por um motor RFC.
+# Nao contem algoritmo — e dado.
+{"caso":"daily-8h","entrada":{"rrule":"FREQ=DAILY","ancora":"2026-03-10T08:00:00Z","dias":5},"saida":{"diasDaAncora":[0,1,2,3,4]}}
+{"caso":"weekly-8h","entrada":{"rrule":"FREQ=WEEKLY","ancora":"2026-03-10T08:00:00Z","dias":4},"saida":{"diasDaAncora":[0,7,14,21]}}
+{"caso":"daily-interval-3","entrada":{"rrule":"FREQ=DAILY;INTERVAL=3","ancora":"2026-03-10T08:00:00Z","dias":5},"saida":{"diasDaAncora":[0,3,6,9,12]}}
+{"caso":"monthly-15-janeiro-12h","entrada":{"rrule":"FREQ=MONTHLY","ancora":"2026-01-15T12:00:00Z","meses":6},"saida":{"diasDaAncora":[0,31,59,90,120,151]}}
+{"caso":"monthly-dia31-pula-fevereiro","entrada":{"rrule":"FREQ=MONTHLY","ancora":"2026-01-31T00:00:00Z","meses":4},"saida":{"diasDaAncora":[0,59,120,181]}}
+{"caso":"monthly-interval-3-count-da-coluna","entrada":{"rrule":"FREQ=MONTHLY;INTERVAL=3","ancora":"2026-01-15T12:00:00Z","count":4},"saida":{"diasDaAncora":[0,90,181,273]}}
+{"caso":"monthly-byday-1mo-primeira-segunda","entrada":{"rrule":"FREQ=MONTHLY;BYDAY=1MO","ancora":"2026-01-05T09:00:00Z","meses":5},"saida":{"diasDaAncora":[0,28,56,91,119]}}
+{"caso":"monthly-bysetpos-ultima-sexta","entrada":{"rrule":"FREQ=MONTHLY;BYDAY=FR;BYSETPOS=-1","ancora":"2026-01-30T18:00:00Z","meses":5},"saida":{"diasDaAncora":[0,28,56,84,119]}}
+{"caso":"monthly-bymonthday-31","entrada":{"rrule":"FREQ=MONTHLY;BYMONTHDAY=31","ancora":"2026-01-31T10:00:00Z","meses":6},"saida":{"diasDaAncora":[0,59,120,181,212,273]}}
+{"caso":"yearly-mesmo-dia-do-ano","entrada":{"rrule":"FREQ=YEARLY","ancora":"2026-03-15T07:00:00Z","anos":3},"saida":{"diasDaAncora":[0,365,731]}}
+{"caso":"yearly-29-de-fevereiro-pula-ano-nao-bissexto","entrada":{"rrule":"FREQ=YEARLY","ancora":"2028-02-29T09:00:00Z","anos":3},"saida":{"diasDaAncora":[0,1461,2922]}}
+{"caso":"weekly-byday-multiplos","entrada":{"rrule":"FREQ=WEEKLY;BYDAY=MO,WE,FR","ancora":"2026-03-09T08:00:00Z","dias":7},"saida":{"diasDaAncora":[0,2,4,7,9,11,14]}}
