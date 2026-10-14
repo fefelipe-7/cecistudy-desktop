@@ -1,8 +1,8 @@
 [package]
-name = "campus"
+name = "cecistudy"
 version = "0.1.0"
-description = "Campus — organização acadêmica"
-authors = ["Campus"]
+description = "cecistudy — organização acadêmica"
+authors = ["cecistudy"]
 license = ""
 repository = ""
 edition = "2024"
@@ -11,20 +11,104 @@ rust-version = "1.90"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
-name = "campus_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+name = "cecistudy_lib"
+# `cdylib` saiu. Ele existia para os alvos móveis do Tauri (Android/iOS), que
+# carregam a lib como biblioteca compartilhada. O desktop empacota o binário de
+# `main.rs`, não a lib — e em `x86_64-pc-windows-gnu` o `ld` do MinGW falha com
+# "export ordinal too large" ao gerar a `cecistudy_lib.dll`. O ADR-008 removeu o
+# cliente Flutter+Rust, que era o único consumidor de `cdylib`.
+crate-type = ["staticlib", "rlib"]
+
+[features]
+# `tauri-shell` separa a casca de GUI do núcleo de domínio.
+#
+# Sem ela, `cargo test --lib --no-default-features` compila só `commands.rs` e
+# `db.rs` — sem WebView2, sem `user32`, sem `gdi32`. Era isso que impedia os
+# testes de domínio de rodarem: o binário de teste carregava a pilha inteira de
+# GUI (445 símbolos importados) e o loader do Windows falhava com
+# STATUS_ENTRYPOINT_NOT_FOUND em máquina sem o runtime do WebView2.
+#
+# A regra do app já era esta: "domain/ stays pure ... because that is what makes
+# those rules testable on every machine, including the ones where the Rust
+# toolchain does not link".
+#
+# `tauri` e `tauri-plugin-log` NÃO são `optional`, e isso é deliberado: o
+# `tauri-build` chama `is_dev()`, que aborta sem a variável `DEP_TAURI_DEV`, e
+# essa variável só existe se o build script do crate `tauri` rodar — o que exige
+# a dependência presente. Build script é dependência normal e não pode ser
+# opcional. Como dependência não referenciada não é linkada, manter `tauri` aqui
+# não traz WebView2 de volta: só o *código* que a usa é gatingado.
+default = ["tauri-shell"]
+tauri-shell = []
 
 [build-dependencies]
-tauri-build = { version = "2.7.0" }
+tauri-build = { version = "2", features = [] }
 
 [dependencies]
-serde_json = "1.0"
+# `float_roundtrip` é obrigatório: sem ela o serde_json imprime f64 com menos
+# dígitos do que o parse recupera, e o golden do FSRS (D76) fica 1 ULP fora —
+# medido em 2026-10-09 (estabilidade 1,1529189348220825 serializada voltava
+# ...23). Vale para todo float que atravessa IPC, não só para o golden.
+serde_json = { version = "1.0", features = ["float_roundtrip"] }
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-tauri = { version = "2.12.0" }
+tauri = { version = "2.12.0", features = [] }
 tauri-plugin-log = "2"
 # Calendário (spec 01): SQLite embarcado e UUID v4 de id.
 # `bundled` compila o amalgamation do SQLite, então a usuária não precisa ter
 # SQLite instalado no Windows.
 rusqlite = { version = "0.37", features = ["bundled"] }
 uuid = { version = "1", features = ["v4"] }
+
+# F1.2 — o motor de recorrência. `rrule` é a implementação de RFC 5545 em Rust
+# (1,3 milhão de downloads, sem dependência nativa), e substitui o parser de 6
+# chaves escrito à mão, que era o que fazia `FREQ=MONTHLY` virar semanal e
+# `FREQ` inválido virar semanal por queda de caso.
+#
+# `rrule` traz `chrono` e `chrono-tz` — a última embute a base de fusos, o que
+# custa ~800 KB no binário. O preço é aceito porque `dtstart_tz` existe no
+# schema e o produto fala de fuso como parâmetro, não como literal.
+rrule = "0.14"
+
+# `chrono` é dependência **direta** porque `commands.rs` faz a conversão
+# epoch-ms ↔ `DateTime<Tz>`. Usar o `chrono` que vem por transitividade through
+# `rrule` compila hoje e quebra amanhã: dependência transitiva não é API.
+chrono = "0.4"
+
+# `chrono-tz` pelo mesmo motivo, e agora por dois consumidores: o Calendário
+# (`dtstart_tz`) e o Estudos (D76 — a âncora de fuso do vencimento do cartão).
+# Já vinha no lock via `rrule`; virar direta é declarar que a API é nossa.
+chrono-tz = "0.10"
+
+# D76 (SPEC-D-010, Estudos) — o motor de repetição espaçada é a crate da
+# comunidade open-spaced-repetition. Versão e licença conferidas na
+# implementação, como §4.4 manda:
+#   crate:    fsrs 6.6.2 (https://github.com/open-spaced-repetition/fsrs-rs)
+#   licença:  BSD-3-Clause
+#   rust-version declarada: 1.81
+# O **otimizador** da crate não é chamado: §4.4 marca otimização de parâmetros
+# como [P], e otimizar sem histórico é ajustar para número inventado. Só o
+# Scheduler entra. `experimental_cost_adr` fica desligada.
+fsrs = "6.6.2"
+
+# D95 (SPEC-D-011, D6.3/D6.4) — o round-trip DOCX.
+#
+# Estas duas crates são **contêiner e sintaxe**, não motor:
+#   `zip`       (MIT, https://github.com/zip-rs/zip2) — o pacote OOXML.
+#   `quick-xml` (MIT) — o XML das partes do pacote.
+#
+# A regra que decide o que `w:ins`/`w:del` significa (item `sugestao`, com autor,
+# data e âncora por texto citado) é de `D78` e mora em
+# `src-tauri/src/tcc/docx.rs`. Delegar essa leitura a um pacote de DOCX seria
+# `D78` alternativa (c), que a spec rejeita: decisão de domínio não se delega à
+# dependência. `zip` vem com `default-features = false` e só
+# `deflate-flate2-zlib-rs`: o resto (aes, bzip2, zstd, lzma) são métodos de
+# compressão que DOCX não usa, e o backend `zopfli` (o `deflate` puro da 9)
+# puxaria quatro crates a mais para comprimir menos. O sufixo `-zlib-rs` escolhe
+# o backend em Rust puro do `flate2`, sem biblioteca de sistema para linkar no
+# `windows-gnu` (o blocker de `D0.1`).
+zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+
+# `quick-xml` já vinha no lock pela `tauri`; virar direta é declarar que a API é
+# nossa, pelo mesmo motivo de `chrono` e `chrono-tz` acima.
+quick-xml = "0.42"

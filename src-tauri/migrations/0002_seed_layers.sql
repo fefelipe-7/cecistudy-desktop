@@ -1,4 +1,4 @@
--- Campus — semente de camadas (spec 01, Fase 1.9 / D4).
+-- cecistudy — semente de camadas (spec 01, Fase 1.9 / D4).
 -- As 6 camadas do Calendário, na ordem de empilhamento da grade.
 -- O id é estável e legível porque é o mesmo id de `LayerId` em
 -- `src/features/calendar/domain/layers.ts` — não é um UUID.

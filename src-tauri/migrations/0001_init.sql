@@ -1,4 +1,4 @@
--- Campus — schema do Calendário (spec 01, §3.3)
+-- cecistudy — schema do Calendário (spec 01, §3.3)
 -- Convenções:
 --   id           TEXT PRIMARY KEY (UUID v4 gerado em Rust)
 --   instantes    INTEGER epoch em milissegundos (UTC)
