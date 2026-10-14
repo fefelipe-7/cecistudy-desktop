@@ -237,11 +237,11 @@ fatias em §"A migração" importa: o gate primeiro, o split depois.
 | # | Invariante | Onde é garantida | Verificação |
 |---|---|---|---|
 | I1 | Todo arquivo Rust que escreve em tabela do schema mora num diretório de módulo, e o nome do diretório é o id do dono | regra 8 reescrita de `D97` | `npm run check:boundaries` |
-| I2 | Nenhum `<módulo>/comandos.rs` escreve em tabela de outro dono | regra 8 (herdada de `D67`) + verificação negativa | `npm run check:boundaries` + a verificação negativa |
+| I2 | Nenhum `<módulo>/comandos.rs` escreve em tabela de outro dono, **seja o `fn` público ou privado** | regra 8 (herdada de `D67`) + verificação negativa nos dois casos | `npm run check:boundaries` + a verificação negativa |
 | I3 | `EXCECOES_NA_RAIZ` está vazia; arquivo de escrita na raiz é violação | ramo de exceção removido na última fatia | `npm run check:boundaries` |
 | I4 | Cada `pub fn X_core` tem casca `X` registrada em `lib.rs`, e nenhum nome é registrado duas vezes | regra nova em `D97` | `npm run check:boundaries` |
 | I5 | Nenhum `<módulo>/comandos.rs` passa de 2000 linhas | `D100` | `npm run check:boundaries` |
-| I6 | O gate acusa uma violação de dono injetada | verificação negativa | `npm run test:gate` (script novo em F0) |
+| I6 | O gate acusa uma violação de dono injetada, **tanto em `pub fn` quanto em `fn` privado** | verificação negativa | `npm run test:gate` (script novo em F0) |
 | I7 | O split não altera comportamento: mesmo número de testes Rust, mesmo golden, e **nenhum SQL alterado** | revisão por diff | `npm run verify` + o diff de literais SQL de §"Critérios de aceite" |
 
 I7 é o que separa "reorganizar" de "mexer". O critério não é "os testes passam" —
@@ -261,8 +261,16 @@ dívida; a nona e a décima são novas.
 1. o dono vem do diretório, pela primeira parte do caminho relativo
    (`calendario/comandos.rs` → `calendario`; `nucleo/db.rs` → sem dono);
 2. o corpo é analisado **só naquele arquivo**, sem cortar em `#[cfg(test)]`;
-3. `fn` privado é ignorado; `pub fn` é o que pode ser alcançado de fora;
+3. **todo `fn` é analisado, público ou privado.** O privado continua sendo
+   caminho de escrita: a casca `pub` do mesmo módulo o chama, então ele é
+   alcançável de fora do crate. Ignorar `fn` privado devolveria o verde falso
+   pela porta dos fundos — e já há um assim hoje
+   (`upsert_recurrence_core`, `commands.rs:509`, privado entre 47 públicos);
 4. escrito em tabela de dono ≠ dono do arquivo é violação.
+
+A verificação negativa cobre os dois casos: um `pub fn` **e** um `fn` privado,
+cada um gravando tabela de outro dono. Se só um dos dois for testado, a regra
+volta a ter um lado cego.
 
 **Regra 8 (parte de dívida).** Arquivo de escrita na raiz do crate é violação,
 salvo se o nome estiver em `EXCECOES_NA_RAIZ`. A lista é impressa sempre:
