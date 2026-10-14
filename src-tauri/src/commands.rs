@@ -47,11 +47,11 @@ use crate::domain::{destinations_of, is_overdue, mark_overlaps, transition_allow
 use crate::estudos::fsrs::{
   Avaliacao as AvaliacaoFsrs, EstadoCartao, FsrsError, dia_de_vencimento, esta_devido, revisar,
 };
-use crate::materia::media::{
+use crate::faculdade::media::{
   Avaliacao as AvaliacaoDoCalculo, EntradaMedia, Frequencia, NOTA_MAXIMA,
   calcular as calcular_media,
 };
-use crate::materia::regra::{
+use crate::faculdade::regra::{
   Camadas, ModoExame, Regra, RegraAplicada, TipoMedia, exigir_semestre_aberto, resolver,
 };
 use crate::tcc::documento::{

@@ -25,10 +25,15 @@
 mod commands;
 mod db;
 mod domain;
-// O motor de notas (D74/D75) nasce aqui e é consumido pelo caminho de escrita em
-// `commands.rs`. É `pub` porque é a API de domínio do módulo Faculdade — o mesmo
-// papel que `domain.rs` tem para o Calendário, mas exposto para o IPC.
-pub mod materia;
+// O motor de notas (D74/D75) nasce aqui e é consumido pelo caminho de escrita
+// do módulo. É `pub` porque é a API de domínio de Faculdade — o mesmo papel que
+// `calendario/dominio.rs` tem para o Calendário, mas exposto para o IPC.
+// O diretório chama `faculdade`, e não `materia`, porque **o nome do diretório
+// é o id do dono** (D97): o gate tira o dono de cada escrita de `DONOS_RUST`, e
+// um diretório fora da lista é violação. O id já era `faculdade` em
+// `DONO_DA_TABELA`, em `src/shell/navigation.ts` e na migration
+// `0003_faculdade.sql` — a pasta era a única peça fora do padrão.
+pub mod faculdade;
 // O motor de repetição espaçada (D76, SPEC-D-010) segue o mesmo desenho: puro,
 // com relógio injetado, e consumido pelo caminho de escrita quando a tela de
 // Estudos existir.

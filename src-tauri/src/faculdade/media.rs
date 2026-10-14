@@ -224,7 +224,7 @@ pub fn calcular(entrada: &EntradaMedia, aplicada: &RegraAplicada) -> ResultadoMe
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::materia::regra::Regra;
+  use crate::faculdade::regra::Regra;
 
   fn av(nota: Option<f64>, peso: f64) -> Avaliacao {
     Avaliacao {
