@@ -94,9 +94,8 @@ pub fn run() {
     // `check-boundaries.mjs` cruza esta lista com as funções que existem, e
     // recusa registro sem casca, casca sem registro e nome duplicado.
     //
-    // Estudos e TCC ainda apontam para `commands::`, que é o caminho em
-    // migração: F3 e F4 dão a cada um o seu diretório, e F5 apaga
-    // `commands.rs`.
+    // TCC ainda aponta para `commands::`, que é o caminho em migração: F4 dá
+    // ao módulo o seu diretório e F4 apaga `commands.rs`.
     .invoke_handler(tauri::generate_handler![
       // Calendário (spec 01, §3.4)
       calendario::comandos::migrate,
@@ -132,10 +131,10 @@ pub fn run() {
       faculdade::comandos::set_regra_disciplina,
       faculdade::comandos::encerrar_semestre,
       // Estudos (SPEC-D-010, D76)
-      commands::create_conteudo,
-      commands::create_cartao,
-      commands::fila_do_dia,
-      commands::revisar_cartao,
+      estudos::comandos::create_conteudo,
+      estudos::comandos::create_cartao,
+      estudos::comandos::fila_do_dia,
+      estudos::comandos::revisar_cartao,
       // TCC & Projetos (SPEC-D-013, D85..D88)
       commands::list_projetos,
       commands::create_projeto,
