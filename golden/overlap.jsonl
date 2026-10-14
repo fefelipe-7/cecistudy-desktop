@@ -1,0 +1,17 @@
+# golden/overlap.jsonl — um caso por linha, entrada e saida esperada.
+# Contrato da D61 (SPEC-D-005): o Rust (src-tauri/src/domain.rs) e o espelho em
+# src/features/calendar/domain/overlap.ts tem de dar a MESMA resposta.
+# D7: sobreposicao e derivada, sinalizada e nunca bloqueante. Intervalos sao
+# semiabertos [inicio, fim): o que termina as 10:00 e comeca as 10:00 nao se
+# sobrepoem.
+# Nao contem algoritmo — e dado.
+{"caso":"a-e-b-conflitam-e-c-so-toca-b","entrada":{"items":[{"id":"a","inicioHora":8,"fimHora":10},{"id":"b","inicioHora":9,"fimHora":11},{"id":"c","inicioHora":11,"fimHora":12}]},"saida":{"emConflito":{"a":true,"b":true,"c":false}}}
+{"caso":"intervalos-que-se-tocam-nao-conflitam","entrada":{"items":[{"id":"a","inicioHora":8,"fimHora":10},{"id":"b","inicioHora":10,"fimHora":12}]},"saida":{"emConflito":{"a":false,"b":false}}}
+{"caso":"cadeia-a-b-c-vira-um-grupo","entrada":{"items":[{"id":"a","inicioHora":8,"fimHora":10},{"id":"b","inicioHora":9,"fimHora":11},{"id":"c","inicioHora":10,"fimHora":12}]},"saida":{"emConflito":{"a":true,"b":true,"c":true}}}
+{"caso":"itens-isolados-nao-conflitam","entrada":{"items":[{"id":"a","inicioHora":8,"fimHora":9},{"id":"b","inicioHora":10,"fimHora":11},{"id":"c","inicioHora":12,"fimHora":13}]},"saida":{"emConflito":{"a":false,"b":false,"c":false}}}
+{"caso":"lista-vazia","entrada":{"items":[]},"saida":{"emConflito":{}}}
+{"caso":"lista-de-um-so","entrada":{"items":[{"id":"a","inicioHora":8,"fimHora":10}]},"saida":{"emConflito":{"a":false}}}
+{"caso":"segundo-par-que-so-toca-nao-entra-no-grupo","entrada":{"items":[{"id":"a","inicioHora":8,"fimHora":10},{"id":"b","inicioHora":9,"fimHora":11},{"id":"c","inicioHora":14,"fimHora":15},{"id":"d","inicioHora":15,"fimHora":17}]},"saida":{"emConflito":{"a":true,"b":true,"c":false,"d":false}}}
+{"caso":"dois-grupos-separados","entrada":{"items":[{"id":"a","inicioHora":8,"fimHora":10},{"id":"b","inicioHora":9,"fimHora":11},{"id":"c","inicioHora":14,"fimHora":16},{"id":"d","inicioHora":15,"fimHora":17}]},"saida":{"emConflito":{"a":true,"b":true,"c":true,"d":true}}}
+{"caso":"entrada-desordenada-nao-muda-o-resultado","entrada":{"items":[{"id":"late","inicioHora":9,"fimHora":11},{"id":"early","inicioHora":8,"fimHora":10}]},"saida":{"emConflito":{"early":true,"late":true}}}
+{"caso":"contido-em-outro-conta","entrada":{"items":[{"id":"outer","inicioHora":8,"fimHora":12},{"id":"inner","inicioHora":9,"fimHora":10}]},"saida":{"emConflito":{"outer":true,"inner":true}}}

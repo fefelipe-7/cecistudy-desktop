@@ -1,0 +1,63 @@
+name: ci
+
+# Gate de PR do desktop. Roda `npm run verify`, que é o gate único declarado no
+# `AGENTS.md` §`Commands`: typecheck, lint, test, test:golden, check:boundaries,
+# e os quatro de Rust (domínio, clippy, fmt, shell).
+#
+# Uma diferença importante em relação ao host de desenvolvimento: aqui o Rust
+# **linka sem esforço nenhum**, porque `ubuntu-latest` tem compilador de C. É por
+# isso que a barreira da máquina local nunca foi a barreira do CI — a D63 da
+# `SPEC-D-005` registra que o bloqueio real era o WebView2 e o compilador, e
+# nenhum dos dois existe aqui.
+#
+# Consequência: `--no-default-features` no gate de domínio é o que impede o
+# binário de teste de linkar `WebView2Loader.dll`. Em Linux o erro seria outro
+# (a `WebView2Loader.dll` nem existe), mas a regra é a mesma — a casca do Tauri
+# fica fora do caminho do domínio.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      # `rust-toolchain.toml` **não** é versionado de propósito: fixar o canal
+      # `x86_64-pc-windows-gnu` quebraria este runner. O toolchain do CI é o
+      # default da toolchain action, e o host de desenvolvimento usa
+      # `rustup override` (ver AGENTS.md §`Toolchain`).
+      - name: install Rust
+        run: rustup toolchain install stable --profile minimal --component clippy,rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: install deps
+        run: npm ci
+
+      - name: install build deps of the shell
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev \
+            librsvg2-dev patchelf
+
+      # O gate único. Um passo só porque a lista no `AGENTS.md` e a lista do
+      # `verify` têm que ser a mesma — e é o `verify` que decide.
+      - name: verify
+        run: npm run verify

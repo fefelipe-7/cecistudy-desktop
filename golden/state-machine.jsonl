@@ -1,0 +1,54 @@
+# golden/state-machine.jsonl — um caso por linha, entrada e saida esperada.
+# Contrato da D61 (SPEC-D-005): os dois lados (Rust em src-tauri/ e o espelho
+# em src/features/calendar/domain/) tem de dar a MESMA resposta para o mesmo
+# caso. Divergencia e falha, e a falha nomeia o caso.
+# Fonte da tabela: spec 01 §4. Nao contem algoritmo — e dado.
+{"caso":"planejado->planejado","entrada":{"from":"planejado","to":"planejado"},"saida":{"aceito":false}}
+{"caso":"planejado->em_andamento","entrada":{"from":"planejado","to":"em_andamento"},"saida":{"aceito":true}}
+{"caso":"planejado->adiado","entrada":{"from":"planejado","to":"adiado"},"saida":{"aceito":true}}
+{"caso":"planejado->nao_realizado","entrada":{"from":"planejado","to":"nao_realizado"},"saida":{"aceito":true}}
+{"caso":"planejado->concluido","entrada":{"from":"planejado","to":"concluido"},"saida":{"aceito":true}}
+{"caso":"planejado->cancelado","entrada":{"from":"planejado","to":"cancelado"},"saida":{"aceito":true}}
+{"caso":"planejado->dispensado","entrada":{"from":"planejado","to":"dispensado"},"saida":{"aceito":true}}
+{"caso":"em_andamento->planejado","entrada":{"from":"em_andamento","to":"planejado"},"saida":{"aceito":false}}
+{"caso":"em_andamento->em_andamento","entrada":{"from":"em_andamento","to":"em_andamento"},"saida":{"aceito":false}}
+{"caso":"em_andamento->adiado","entrada":{"from":"em_andamento","to":"adiado"},"saida":{"aceito":true}}
+{"caso":"em_andamento->nao_realizado","entrada":{"from":"em_andamento","to":"nao_realizado"},"saida":{"aceito":true}}
+{"caso":"em_andamento->concluido","entrada":{"from":"em_andamento","to":"concluido"},"saida":{"aceito":true}}
+{"caso":"em_andamento->cancelado","entrada":{"from":"em_andamento","to":"cancelado"},"saida":{"aceito":true}}
+{"caso":"em_andamento->dispensado","entrada":{"from":"em_andamento","to":"dispensado"},"saida":{"aceito":true}}
+{"caso":"adiado->planejado","entrada":{"from":"adiado","to":"planejado"},"saida":{"aceito":true}}
+{"caso":"adiado->em_andamento","entrada":{"from":"adiado","to":"em_andamento"},"saida":{"aceito":true}}
+{"caso":"adiado->adiado","entrada":{"from":"adiado","to":"adiado"},"saida":{"aceito":false}}
+{"caso":"adiado->nao_realizado","entrada":{"from":"adiado","to":"nao_realizado"},"saida":{"aceito":true}}
+{"caso":"adiado->concluido","entrada":{"from":"adiado","to":"concluido"},"saida":{"aceito":true}}
+{"caso":"adiado->cancelado","entrada":{"from":"adiado","to":"cancelado"},"saida":{"aceito":true}}
+{"caso":"adiado->dispensado","entrada":{"from":"adiado","to":"dispensado"},"saida":{"aceito":true}}
+{"caso":"nao_realizado->planejado","entrada":{"from":"nao_realizado","to":"planejado"},"saida":{"aceito":true}}
+{"caso":"nao_realizado->em_andamento","entrada":{"from":"nao_realizado","to":"em_andamento"},"saida":{"aceito":true}}
+{"caso":"nao_realizado->adiado","entrada":{"from":"nao_realizado","to":"adiado"},"saida":{"aceito":true}}
+{"caso":"nao_realizado->nao_realizado","entrada":{"from":"nao_realizado","to":"nao_realizado"},"saida":{"aceito":false}}
+{"caso":"nao_realizado->concluido","entrada":{"from":"nao_realizado","to":"concluido"},"saida":{"aceito":true}}
+{"caso":"nao_realizado->cancelado","entrada":{"from":"nao_realizado","to":"cancelado"},"saida":{"aceito":true}}
+{"caso":"nao_realizado->dispensado","entrada":{"from":"nao_realizado","to":"dispensado"},"saida":{"aceito":true}}
+{"caso":"concluido->planejado","entrada":{"from":"concluido","to":"planejado"},"saida":{"aceito":false}}
+{"caso":"concluido->em_andamento","entrada":{"from":"concluido","to":"em_andamento"},"saida":{"aceito":true}}
+{"caso":"concluido->adiado","entrada":{"from":"concluido","to":"adiado"},"saida":{"aceito":false}}
+{"caso":"concluido->nao_realizado","entrada":{"from":"concluido","to":"nao_realizado"},"saida":{"aceito":false}}
+{"caso":"concluido->concluido","entrada":{"from":"concluido","to":"concluido"},"saida":{"aceito":false}}
+{"caso":"concluido->cancelado","entrada":{"from":"concluido","to":"cancelado"},"saida":{"aceito":false}}
+{"caso":"concluido->dispensado","entrada":{"from":"concluido","to":"dispensado"},"saida":{"aceito":false}}
+{"caso":"cancelado->planejado","entrada":{"from":"cancelado","to":"planejado"},"saida":{"aceito":true}}
+{"caso":"cancelado->em_andamento","entrada":{"from":"cancelado","to":"em_andamento"},"saida":{"aceito":false}}
+{"caso":"cancelado->adiado","entrada":{"from":"cancelado","to":"adiado"},"saida":{"aceito":false}}
+{"caso":"cancelado->nao_realizado","entrada":{"from":"cancelado","to":"nao_realizado"},"saida":{"aceito":false}}
+{"caso":"cancelado->concluido","entrada":{"from":"cancelado","to":"concluido"},"saida":{"aceito":false}}
+{"caso":"cancelado->cancelado","entrada":{"from":"cancelado","to":"cancelado"},"saida":{"aceito":false}}
+{"caso":"cancelado->dispensado","entrada":{"from":"cancelado","to":"dispensado"},"saida":{"aceito":false}}
+{"caso":"dispensado->planejado","entrada":{"from":"dispensado","to":"planejado"},"saida":{"aceito":true}}
+{"caso":"dispensado->em_andamento","entrada":{"from":"dispensado","to":"em_andamento"},"saida":{"aceito":false}}
+{"caso":"dispensado->adiado","entrada":{"from":"dispensado","to":"adiado"},"saida":{"aceito":false}}
+{"caso":"dispensado->nao_realizado","entrada":{"from":"dispensado","to":"nao_realizado"},"saida":{"aceito":false}}
+{"caso":"dispensado->concluido","entrada":{"from":"dispensado","to":"concluido"},"saida":{"aceito":false}}
+{"caso":"dispensado->cancelado","entrada":{"from":"dispensado","to":"cancelado"},"saida":{"aceito":false}}
+{"caso":"dispensado->dispensado","entrada":{"from":"dispensado","to":"dispensado"},"saida":{"aceito":false}}

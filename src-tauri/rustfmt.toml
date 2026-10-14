@@ -1,0 +1,9 @@
+# Estilo do projeto, não o default do rustfmt.
+#
+# `build.rs` e o corpo de `src/` já usam 2 espaços, e impor o default (4)
+# reformata o arquivo inteiro sem mudar nenhuma regra. `tab_spaces = 2` alinha o
+# gate com o que está em disco — um gate que exige reescrever tudo na primeira
+# execução é um gate que ninguém roda.
+tab_spaces = 2
+max_width = 100
+edition = "2024"

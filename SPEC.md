@@ -3,11 +3,58 @@
 Data: 2026-09-28
 Escopo: remover rastros do Lovable, trocar Bun por npm, substituir TanStack Start/Router/Query por React + Vite (SPA), podar código morto e envelopar como app desktop com Tauri v2.
 
+## Este documento é histórico
+
+**Declarado em 2026-10-03** (item 5.1 da F5, [`roadmap.md`](../../roadmap.md), débito
+C12). Este arquivo é o registro da migração de 2026-09-28. Ele **não é fonte da
+verdade** sobre como o app funciona, e nenhuma frase abaixo deve ser lida como
+estado atual.
+
+| Para o quê | Onde está a verdade hoje |
+|---|---|
+| Como o app está agora | [`AGENTS.md`](./AGENTS.md) |
+| O módulo Calendário | [`docs/calendario/CALENDARIO-SPEC.md`](docs/calendario/CALENDARIO-SPEC.md) — índice vivo |
+| Performance, motion e fluidez | [`docs/performance/PERFORMANCE-SPEC.md`](docs/performance/PERFORMANCE-SPEC.md) — índice vivo |
+| Regra de domínio autoritativa | `src-tauri/` (Rust), por [`ADR-006`](../../docs/decisoes/ADR-006-backend-do-desktop-em-rust.md) |
+
+**Por que ele fica.** Ele registra o que a migração removeu e por quê, e esse
+raciocínio não existe em lugar nenhum. Some dele e a tentação de reintroduzir
+`@tauri-apps/plugin-store` ou o TanStack volta — o
+[`CALENDARIO-SPEC.md`](docs/calendario/CALENDARIO-SPEC.md) já registra que essa
+recomendação foi **superada** pela decisão A2 do modelo de persistência.
+
+**O que está errado aqui, e não é pouco.** O diagnóstico de Rust nas linhas 10-21
+é a parte mais consultada deste arquivo e está **inteiramente superado**: ele
+conclui que a barreira exige VS Build Tools 2022 com elevação, e a via real foi
+outra — toolchain **host** `stable-x86_64-pc-windows-gnu` com MinGW-w64 portátil,
+sem elevação ([`SPEC-D-005`](../docs/specs/desktop/SPEC-D-005-executar-o-backend-rust.md)
+D62). Dois dos cinco itens do diagnóstico também já não BATEM: `cargo check`
+passa hoje, e o item 4 atribui a falha ao `llvm-mingw` quando o problema real era
+falta de `libgcc_eh.a` — o `llvm-mingw` não serve para o alvo `windows-gnu`, e a
+solução foi um MinGW-w64 de verdade. O gate agora é `npm run verify`.
+
+O `CALENDARIO-SPEC.md` também referenciava este arquivo como fonte de
+`SPEC.md:10` para justificar o bloqueio de Rust. Essa referência foi corrigida em
+2026-09-29 e o texto abaixo é o que sobrou.
+
 ## Status (2026-09-28)
 
 Fases 0 a 6 implementadas e commitadas. `typecheck`, `lint` e `build` verdes; front-end validado no Chrome (dev e produção).
 
-**Pendente:** a compilação Rust (`cargo check` / `tauri:dev`) está bloqueada por falta do MSVC Build Tools na máquina — `link.exe not found`. O `rustup default` já foi corrigido para `stable-x86_64-pc-windows-msvc`. Instalar o *Visual Studio Build Tools 2022* com o workload "Desktop development with C++" destrava a Fase 5; a config do Tauri já está pronta e não precisa de ajuste.
+**Pendente:** a compilação Rust está bloqueada nesta máquina por falta de um toolchain C capaz de **linkar**. Diagnóstico completo, verificado em 2026-09-29:
+
+1. `rustup default` é `stable-x86_64-pc-windows-msvc`; não há MSVC Build Tools, então `link.exe not found`.
+2. `cargo check` **também** falha, e não apenas `cargo build`. Build scripts e crates de proc-macro são compilados **e linkados para o host**, então o linker do host é obrigatório mesmo em `check`.
+3. Instalar só o _target_ `x86_64-pc-windows-gnu` não resolve, porque os build scripts continuam sendo linkados no host `msvc`.
+4. Instalar o toolchain **host** `stable-x86_64-pc-windows-gnu` resolve o item 3, mas esbarra em outro problema: o único compilador C presente é o **llvm-mingw** (em `~/AppData/Local/llvm-mingw-*`), que usa `libunwind` e **não** fornece `libgcc`/`libgcc_eh`, exigidos pelo `rustc` do alvo `windows-gnu` (`lld: error: unable to find library -lgcc_eh`).
+5. Piso verificado: um crate sem dependências, sem proc-macro e sem build script **passa** em `cargo check` sem nenhum linker. A barreira é, portanto, o conjunto de crates com build script — que inclui `libsqlite3-sys` (usado por `rusqlite`) e todo o `serde` derive.
+
+**Como destravar** (qualquer uma das duas):
+
+- instalar o _Visual Studio Build Tools 2022_ com o workload "Desktop development with C++" — recomendado, porque é o alvo que o Tauri suporta melhor e mantém `rustup default` em `msvc`; ou
+- instalar um **mingw-w64 completo** (MSYS2 GCC ou WinLibs) e passar a usar o toolchain `stable-x86_64-pc-windows-gnu` como host — o llvm-mingw não serve, por não trazer `libgcc`.
+
+Enquanto isso, o backend Rust da spec 01 foi escrito e revisado, e o schema foi **validado contra um engine SQLite real** pelo `node:sqlite` do Node 26 — ver `docs/calendario/01-dominio-persistencia.md` §4.
 
 ---
 

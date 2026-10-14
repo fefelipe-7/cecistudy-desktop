@@ -1,0 +1,92 @@
+# golden/overdue.jsonl — um caso por linha, entrada e saida esperada.
+# Contrato da D61 (SPEC-D-005): o Rust (src-tauri/src/domain.rs) e o espelho em
+# src/features/calendar/domain/overdue.ts tem de dar a MESMA resposta.
+# INV-4: o atraso e DERIVADO, nunca persistido. Regra do grupo: nao existe
+# coluna de atraso no schema, e nenhum outro lugar compara dueAt com o agora.
+# §3: so obrigatorio e importante viram atraso — e e o que impede
+# recomendado/opcional de virar obrigacao.
+# Nao contem algoritmo — e dado.
+{"caso":"obrigatorio-planejado-sem-prazo","entrada":{"compromisso":"obrigatorio","estado":"planejado","dueAt":null,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"obrigatorio-planejado-vencido","entrada":{"compromisso":"obrigatorio","estado":"planejado","dueAt":39600000,"agoraHoras":12},"saida":{"atrasado":true}}
+{"caso":"obrigatorio-planejado-futuro","entrada":{"compromisso":"obrigatorio","estado":"planejado","dueAt":46800000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"obrigatorio-em_andamento-sem-prazo","entrada":{"compromisso":"obrigatorio","estado":"em_andamento","dueAt":null,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"obrigatorio-em_andamento-vencido","entrada":{"compromisso":"obrigatorio","estado":"em_andamento","dueAt":39600000,"agoraHoras":12},"saida":{"atrasado":true}}
+{"caso":"obrigatorio-em_andamento-futuro","entrada":{"compromisso":"obrigatorio","estado":"em_andamento","dueAt":46800000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"obrigatorio-adiado-sem-prazo","entrada":{"compromisso":"obrigatorio","estado":"adiado","dueAt":null,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"obrigatorio-adiado-vencido","entrada":{"compromisso":"obrigatorio","estado":"adiado","dueAt":39600000,"agoraHoras":12},"saida":{"atrasado":true}}
+{"caso":"obrigatorio-adiado-futuro","entrada":{"compromisso":"obrigatorio","estado":"adiado","dueAt":46800000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"obrigatorio-nao_realizado-sem-prazo","entrada":{"compromisso":"obrigatorio","estado":"nao_realizado","dueAt":null,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"obrigatorio-nao_realizado-vencido","entrada":{"compromisso":"obrigatorio","estado":"nao_realizado","dueAt":39600000,"agoraHoras":12},"saida":{"atrasado":true}}
+{"caso":"obrigatorio-nao_realizado-futuro","entrada":{"compromisso":"obrigatorio","estado":"nao_realizado","dueAt":46800000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"obrigatorio-concluido-sem-prazo","entrada":{"compromisso":"obrigatorio","estado":"concluido","dueAt":null,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"obrigatorio-concluido-vencido","entrada":{"compromisso":"obrigatorio","estado":"concluido","dueAt":39600000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"obrigatorio-concluido-futuro","entrada":{"compromisso":"obrigatorio","estado":"concluido","dueAt":46800000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"obrigatorio-cancelado-sem-prazo","entrada":{"compromisso":"obrigatorio","estado":"cancelado","dueAt":null,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"obrigatorio-cancelado-vencido","entrada":{"compromisso":"obrigatorio","estado":"cancelado","dueAt":39600000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"obrigatorio-cancelado-futuro","entrada":{"compromisso":"obrigatorio","estado":"cancelado","dueAt":46800000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"obrigatorio-dispensado-sem-prazo","entrada":{"compromisso":"obrigatorio","estado":"dispensado","dueAt":null,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"obrigatorio-dispensado-vencido","entrada":{"compromisso":"obrigatorio","estado":"dispensado","dueAt":39600000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"obrigatorio-dispensado-futuro","entrada":{"compromisso":"obrigatorio","estado":"dispensado","dueAt":46800000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"importante-planejado-sem-prazo","entrada":{"compromisso":"importante","estado":"planejado","dueAt":null,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"importante-planejado-vencido","entrada":{"compromisso":"importante","estado":"planejado","dueAt":39600000,"agoraHoras":12},"saida":{"atrasado":true}}
+{"caso":"importante-planejado-futuro","entrada":{"compromisso":"importante","estado":"planejado","dueAt":46800000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"importante-em_andamento-sem-prazo","entrada":{"compromisso":"importante","estado":"em_andamento","dueAt":null,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"importante-em_andamento-vencido","entrada":{"compromisso":"importante","estado":"em_andamento","dueAt":39600000,"agoraHoras":12},"saida":{"atrasado":true}}
+{"caso":"importante-em_andamento-futuro","entrada":{"compromisso":"importante","estado":"em_andamento","dueAt":46800000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"importante-adiado-sem-prazo","entrada":{"compromisso":"importante","estado":"adiado","dueAt":null,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"importante-adiado-vencido","entrada":{"compromisso":"importante","estado":"adiado","dueAt":39600000,"agoraHoras":12},"saida":{"atrasado":true}}
+{"caso":"importante-adiado-futuro","entrada":{"compromisso":"importante","estado":"adiado","dueAt":46800000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"importante-nao_realizado-sem-prazo","entrada":{"compromisso":"importante","estado":"nao_realizado","dueAt":null,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"importante-nao_realizado-vencido","entrada":{"compromisso":"importante","estado":"nao_realizado","dueAt":39600000,"agoraHoras":12},"saida":{"atrasado":true}}
+{"caso":"importante-nao_realizado-futuro","entrada":{"compromisso":"importante","estado":"nao_realizado","dueAt":46800000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"importante-concluido-sem-prazo","entrada":{"compromisso":"importante","estado":"concluido","dueAt":null,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"importante-concluido-vencido","entrada":{"compromisso":"importante","estado":"concluido","dueAt":39600000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"importante-concluido-futuro","entrada":{"compromisso":"importante","estado":"concluido","dueAt":46800000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"importante-cancelado-sem-prazo","entrada":{"compromisso":"importante","estado":"cancelado","dueAt":null,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"importante-cancelado-vencido","entrada":{"compromisso":"importante","estado":"cancelado","dueAt":39600000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"importante-cancelado-futuro","entrada":{"compromisso":"importante","estado":"cancelado","dueAt":46800000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"importante-dispensado-sem-prazo","entrada":{"compromisso":"importante","estado":"dispensado","dueAt":null,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"importante-dispensado-vencido","entrada":{"compromisso":"importante","estado":"dispensado","dueAt":39600000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"importante-dispensado-futuro","entrada":{"compromisso":"importante","estado":"dispensado","dueAt":46800000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"recomendado-planejado-sem-prazo","entrada":{"compromisso":"recomendado","estado":"planejado","dueAt":null,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"recomendado-planejado-vencido","entrada":{"compromisso":"recomendado","estado":"planejado","dueAt":39600000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"recomendado-planejado-futuro","entrada":{"compromisso":"recomendado","estado":"planejado","dueAt":46800000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"recomendado-em_andamento-sem-prazo","entrada":{"compromisso":"recomendado","estado":"em_andamento","dueAt":null,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"recomendado-em_andamento-vencido","entrada":{"compromisso":"recomendado","estado":"em_andamento","dueAt":39600000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"recomendado-em_andamento-futuro","entrada":{"compromisso":"recomendado","estado":"em_andamento","dueAt":46800000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"recomendado-adiado-sem-prazo","entrada":{"compromisso":"recomendado","estado":"adiado","dueAt":null,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"recomendado-adiado-vencido","entrada":{"compromisso":"recomendado","estado":"adiado","dueAt":39600000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"recomendado-adiado-futuro","entrada":{"compromisso":"recomendado","estado":"adiado","dueAt":46800000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"recomendado-nao_realizado-sem-prazo","entrada":{"compromisso":"recomendado","estado":"nao_realizado","dueAt":null,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"recomendado-nao_realizado-vencido","entrada":{"compromisso":"recomendado","estado":"nao_realizado","dueAt":39600000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"recomendado-nao_realizado-futuro","entrada":{"compromisso":"recomendado","estado":"nao_realizado","dueAt":46800000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"recomendado-concluido-sem-prazo","entrada":{"compromisso":"recomendado","estado":"concluido","dueAt":null,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"recomendado-concluido-vencido","entrada":{"compromisso":"recomendado","estado":"concluido","dueAt":39600000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"recomendado-concluido-futuro","entrada":{"compromisso":"recomendado","estado":"concluido","dueAt":46800000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"recomendado-cancelado-sem-prazo","entrada":{"compromisso":"recomendado","estado":"cancelado","dueAt":null,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"recomendado-cancelado-vencido","entrada":{"compromisso":"recomendado","estado":"cancelado","dueAt":39600000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"recomendado-cancelado-futuro","entrada":{"compromisso":"recomendado","estado":"cancelado","dueAt":46800000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"recomendado-dispensado-sem-prazo","entrada":{"compromisso":"recomendado","estado":"dispensado","dueAt":null,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"recomendado-dispensado-vencido","entrada":{"compromisso":"recomendado","estado":"dispensado","dueAt":39600000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"recomendado-dispensado-futuro","entrada":{"compromisso":"recomendado","estado":"dispensado","dueAt":46800000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"opcional-planejado-sem-prazo","entrada":{"compromisso":"opcional","estado":"planejado","dueAt":null,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"opcional-planejado-vencido","entrada":{"compromisso":"opcional","estado":"planejado","dueAt":39600000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"opcional-planejado-futuro","entrada":{"compromisso":"opcional","estado":"planejado","dueAt":46800000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"opcional-em_andamento-sem-prazo","entrada":{"compromisso":"opcional","estado":"em_andamento","dueAt":null,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"opcional-em_andamento-vencido","entrada":{"compromisso":"opcional","estado":"em_andamento","dueAt":39600000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"opcional-em_andamento-futuro","entrada":{"compromisso":"opcional","estado":"em_andamento","dueAt":46800000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"opcional-adiado-sem-prazo","entrada":{"compromisso":"opcional","estado":"adiado","dueAt":null,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"opcional-adiado-vencido","entrada":{"compromisso":"opcional","estado":"adiado","dueAt":39600000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"opcional-adiado-futuro","entrada":{"compromisso":"opcional","estado":"adiado","dueAt":46800000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"opcional-nao_realizado-sem-prazo","entrada":{"compromisso":"opcional","estado":"nao_realizado","dueAt":null,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"opcional-nao_realizado-vencido","entrada":{"compromisso":"opcional","estado":"nao_realizado","dueAt":39600000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"opcional-nao_realizado-futuro","entrada":{"compromisso":"opcional","estado":"nao_realizado","dueAt":46800000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"opcional-concluido-sem-prazo","entrada":{"compromisso":"opcional","estado":"concluido","dueAt":null,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"opcional-concluido-vencido","entrada":{"compromisso":"opcional","estado":"concluido","dueAt":39600000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"opcional-concluido-futuro","entrada":{"compromisso":"opcional","estado":"concluido","dueAt":46800000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"opcional-cancelado-sem-prazo","entrada":{"compromisso":"opcional","estado":"cancelado","dueAt":null,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"opcional-cancelado-vencido","entrada":{"compromisso":"opcional","estado":"cancelado","dueAt":39600000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"opcional-cancelado-futuro","entrada":{"compromisso":"opcional","estado":"cancelado","dueAt":46800000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"opcional-dispensado-sem-prazo","entrada":{"compromisso":"opcional","estado":"dispensado","dueAt":null,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"opcional-dispensado-vencido","entrada":{"compromisso":"opcional","estado":"dispensado","dueAt":39600000,"agoraHoras":12},"saida":{"atrasado":false}}
+{"caso":"opcional-dispensado-futuro","entrada":{"compromisso":"opcional","estado":"dispensado","dueAt":46800000,"agoraHoras":12},"saida":{"atrasado":false}}
