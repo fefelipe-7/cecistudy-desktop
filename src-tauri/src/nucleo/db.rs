@@ -1,3 +1,16 @@
+//! A infraestrutura que os quatro módulos compartilham: a conexão, o erro,
+//! e as duas funções sem dono — `new_id` e `now_ms` (SPEC-D-015, D96).
+//!
+//! O critério de que está aqui é duplo: **não é regra de nenhum módulo** e
+//! **é alcançado por mais de um**. `Db` e `DbError` são o tipo de todo mundo;
+//! `new_id` e `now_ms` eram helpers privados de `commands.rs` usados pelos quatro
+//! blocos. Os outros quarenta e tantos helpers daquele arquivo são de um dono só,
+//! e foram junto com o dono.
+//!
+//! Nada de regra de domínio mora aqui. A máquina de estados é de
+//! `calendario/dominio.rs`, a média é de `faculdade/media.rs` e o FSRS é de
+//! `estudos/fsrs.rs`.
+
 //! Conexão SQLite e migrações versionadas do Calendário (spec 01, Fase 1.4).
 //!
 //! Decisões que moram aqui:
@@ -23,6 +36,7 @@ use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 
 use rusqlite::Connection;
+use uuid::Uuid;
 
 /// Nome do arquivo de banco. Estável entre versões: é o mesmo arquivo que a
 /// usuária já tem depois de uma atualização.
@@ -33,21 +47,31 @@ pub const DB_FILE_NAME: &str = "campus.sqlite";
 /// `include_str!` resolve em tempo de compilação: o `.sql` viaja dentro do
 /// executável, então o app não depende de ler um diretório `migrations/` que
 /// pode não existir no Windows depois de um empacotamento.
+///
+/// O caminho tem dois `..` porque este arquivo mora em `src/nucleo/`, um nível
+/// abaixo de onde `db.rs` morava. `migrations/` continua ao lado de `src/`, na
+/// raiz de `src-tauri/`.
 const MIGRATIONS: &[(&str, &str)] = &[
-  ("0001_init.sql", include_str!("../migrations/0001_init.sql")),
+  (
+    "0001_init.sql",
+    include_str!("../../migrations/0001_init.sql"),
+  ),
   (
     "0002_seed_layers.sql",
-    include_str!("../migrations/0002_seed_layers.sql"),
+    include_str!("../../migrations/0002_seed_layers.sql"),
   ),
   (
     "0003_faculdade.sql",
-    include_str!("../migrations/0003_faculdade.sql"),
+    include_str!("../../migrations/0003_faculdade.sql"),
   ),
   (
     "0004_estudos.sql",
-    include_str!("../migrations/0004_estudos.sql"),
+    include_str!("../../migrations/0004_estudos.sql"),
   ),
-  ("0005_tcc.sql", include_str!("../migrations/0005_tcc.sql")),
+  (
+    "0005_tcc.sql",
+    include_str!("../../migrations/0005_tcc.sql"),
+  ),
 ];
 
 /// Estado gerenciado pelo Tauri e compartilhado por todos os comandos.
@@ -172,6 +196,25 @@ impl From<std::io::Error> for DbError {
   fn from(e: std::io::Error) -> Self {
     Self::Io(e)
   }
+}
+
+/// Identificador novo. **Não é regra**: é a mesma geração para os quatro
+/// módulos, e uma versão só evita que dois deles gravem o mesmo id.
+pub fn new_id() -> String {
+  Uuid::new_v4().to_string()
+}
+
+/// Instante do relógio do sistema, em epoch-ms.
+///
+/// O `Clock` injetável é do lado TypeScript. Aqui o relógio do sistema é a
+/// única fonte possível, e **nenhuma regra de domínio depende deste valor**:
+/// quem depende do instante é o chamador, que o passa para o motor puro
+/// (`fsrs::revisar` recebe `agora` por parâmetro, não o consulta).
+pub fn now_ms() -> Result<i64, DbError> {
+  let ms = std::time::SystemTime::now()
+    .duration_since(std::time::UNIX_EPOCH)
+    .map_err(|e| DbError::Domain(format!("relógio antes da época Unix: {e}")))?;
+  i64::try_from(ms.as_millis()).map_err(|_| DbError::Domain("instante fora do range de i64".into()))
 }
 
 #[cfg(test)]

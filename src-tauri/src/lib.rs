@@ -1,8 +1,16 @@
-//! Casca do Tauri: abre o banco e registra os comandos do Calendário.
+//! Casca do Tauri: abre o banco e registra os comandos.
 //!
-//! Este arquivo é deliberadamente fino. Ele sabe duas coisas — onde fica o
-//! `app_data_dir` e quais comandos existem. A regra de domínio está em
-//! `commands.rs`, e a conexão em `db.rs`; nenhum dos dois importa `tauri`.
+//! Este arquivo é deliberadamente fino. Ele sabe três coisas — onde fica o
+//! `app_data_dir`, quais módulos existem e quais comandos cada um registra.
+//! Nenhum dos módulos importa `tauri`.
+//!
+//! **O registro é a leitura da fronteira.** Os nomes vão com o caminho do módulo
+//! que os possui (`calendario::comandos::list_events_in_window`), agrupados por
+//! dono e comentados, de modo que os quatro donos do produto fiquem visíveis na
+//! própria lista de IPC. A regra 9 de `check-boundaries.mjs` cruza esta lista com
+//! as funções que existem: núcleo sem casca, casca sem registro, registro
+//! apontando para nada e nome duplicado são falha do gate — porque divergência
+//! aqui só aparece em runtime, na tela (SPEC-D-015 D97, I4).
 //!
 //! A casca inteira é `#[cfg(feature = "tauri-shell")]`. Sem essa feature o crate
 //! compila só o núcleo de domínio, e é assim que `cargo test --lib
@@ -22,33 +30,32 @@
   )
 )]
 
-mod commands;
-mod db;
-mod domain;
-// O motor de notas (D74/D75) nasce aqui e é consumido pelo caminho de escrita
-// do módulo. É `pub` porque é a API de domínio de Faculdade — o mesmo papel que
-// `calendario/dominio.rs` tem para o Calendário, mas exposto para o IPC.
-// O diretório chama `faculdade`, e não `materia`, porque **o nome do diretório
-// é o id do dono** (D97): o gate tira o dono de cada escrita de `DONOS_RUST`, e
-// um diretório fora da lista é violação. O id já era `faculdade` em
-// `DONO_DA_TABELA`, em `src/shell/navigation.ts` e na migration
+pub mod calendario;
+// O motor de notas (D74/D75) é puro e não toca SQL; é a API de domínio de
+// Faculdade, e o caminho de escrita do módulo está em `faculdade/comandos.rs`
+// (SPEC-D-015 F2). O diretório chama `faculdade`, e não `materia`, porque **o
+// nome do diretório é o id do dono** (D97): o gate tira o dono de cada escrita
+// de `DONOS_RUST`, e um diretório fora da lista é violação. O id já era
+// `faculdade` em `DONO_DA_TABELA`, em `src/shell/navigation.ts` e na migration
 // `0003_faculdade.sql` — a pasta era a única peça fora do padrão.
 pub mod faculdade;
 // O motor de repetição espaçada (D76, SPEC-D-010) segue o mesmo desenho: puro,
-// com relógio injetado, e consumido pelo caminho de escrita quando a tela de
-// Estudos existir.
+// com relógio injetado, e consumido pelo caminho de escrita do módulo de Estudos.
 pub mod estudos;
 // TCC & Projetos (SPEC-D-013, D85..D88): o modelo do documento, o motor de
 // paginação puro e a lista de decisão da importação. Fonte de verdade ao lado da
-// migração `0005_tcc.sql`; consumido pelo caminho de escrita em `commands.rs`.
+// migração `0005_tcc.sql`; consumido pelo caminho de escrita em `tcc/comandos.rs`.
+mod commands;
+pub mod nucleo;
 pub mod tcc;
 
-// `db` só é usado pela casca; sem a feature ele compila, mas não é referenciado.
+// `nucleo::Db` só é usado pela casca; sem a feature ele compila, mas não é
+// referenciado.
 #[cfg(feature = "tauri-shell")]
 use tauri::Manager;
 
 #[cfg(feature = "tauri-shell")]
-use db::Db;
+use nucleo::Db;
 
 #[cfg(feature = "tauri-shell")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -74,32 +81,44 @@ pub fn run() {
 
       Ok(())
     })
-    // §3.4 + SPEC-D-010 + SPEC-D-013: os nomes registrados. Os de Calendário,
-    // Faculdade, Estudos e TCC têm par numa `data/bridge.ts`; `get_setting` e
-    // `set_setting` ainda não têm chamador no front-end. A lista é a fronteira
-    // entre Rust e TypeScript — se um nome divergir, o `invoke` falha em
-    // runtime, então qualquer mudança aqui muda lá também.
+    // §3.4 + SPEC-D-010 + SPEC-D-013: os nomes registrados.
+    //
+    // **O caminho do módulo é o que torna esta lista a leitura da fronteira.**
+    // Os quatro donos do produto aparecem em quatro blocos, e quem lê a lista
+    // sabe quem é dono de qual comando sem abrir mais nada. Os nomes de
+    // Calendário, Faculdade, Estudos e TCC têm par numa `data/bridge.ts`;
+    // `get_setting` e `set_setting` ainda não têm chamador no front-end.
+    //
+    // Esta lista é a fronteira entre Rust e TypeScript: se um nome divergir,
+    // o `invoke` falha em runtime, na tela, e nada acusa antes. A regra 9 de
+    // `check-boundaries.mjs` cruza esta lista com as funções que existem, e
+    // recusa registro sem casca, casca sem registro e nome duplicado.
+    //
+    // Faculdade, Estudos e TCC ainda apontam para `commands::`, que é o
+    // caminho em migração: F2, F3 e F4 dão a cada um o seu diretório, e F5
+    // apaga `commands.rs`.
     .invoke_handler(tauri::generate_handler![
-      commands::migrate,
-      commands::list_events_in_window,
-      commands::list_responsibilities,
-      commands::create_event,
-      commands::update_event,
-      commands::delete_event,
-      commands::set_occurrence_state,
-      commands::move_occurrence,
-      commands::upsert_recurrence,
-      commands::update_recurrence,
-      commands::create_responsibility,
-      commands::set_step_state,
-      commands::plan_block,
-      commands::reschedule_block,
-      commands::complete_item,
-      commands::record_execution,
-      commands::list_layers,
-      commands::set_layer_visibility,
-      commands::get_setting,
-      commands::set_setting,
+      // Calendário (spec 01, §3.4)
+      calendario::comandos::migrate,
+      calendario::comandos::list_events_in_window,
+      calendario::comandos::list_responsibilities,
+      calendario::comandos::create_event,
+      calendario::comandos::update_event,
+      calendario::comandos::delete_event,
+      calendario::comandos::set_occurrence_state,
+      calendario::comandos::move_occurrence,
+      calendario::comandos::upsert_recurrence,
+      calendario::comandos::update_recurrence,
+      calendario::comandos::create_responsibility,
+      calendario::comandos::set_step_state,
+      calendario::comandos::plan_block,
+      calendario::comandos::reschedule_block,
+      calendario::comandos::complete_item,
+      calendario::comandos::record_execution,
+      calendario::comandos::list_layers,
+      calendario::comandos::set_layer_visibility,
+      calendario::comandos::get_setting,
+      calendario::comandos::set_setting,
       // Faculdade (SPEC-D-010, D74/D75)
       commands::list_semestres,
       commands::list_disciplinas,

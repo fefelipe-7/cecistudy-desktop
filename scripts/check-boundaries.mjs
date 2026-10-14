@@ -530,17 +530,25 @@ function funcoesDeIpc() {
   return { nucleos, cascas };
 }
 
-/** Os comandos registrados em `lib.rs`, com a linha, para acusar duplicata. */
+/**
+ * Os comandos registrados em `lib.rs`, com a linha, para acusar duplicata.
+ *
+ * Aceita o caminho completo do módulo (`calendario::comandos::migrate`) e
+ * guarda só o último segmento, que é o nome que o `invoke` usa. O caminho
+ * importa para a leitura de quem abre o arquivo; para o cruzamento, o que
+ * identifica o comando é o nome.
+ */
 function comandosRegistrados() {
   const lib = readFileSync(join(SRC_RUST, "lib.rs"), "utf8");
   const registrados = new Map();
   const linhas = lib.split(/\r?\n/);
   for (let i = 0; i < linhas.length; i++) {
-    // Só o que está dentro de `generate_handler!`, e só na forma `mod::comando`.
-    const m = /^\s*(\w+)::(\w+),?\s*$/.exec(linhas[i]);
+    // Só a forma `mod::…::comando`, que é como `generate_handler!` lista.
+    const m = /^\s*(?:\w+::)+\w+,?\s*$/.exec(linhas[i]);
     if (!m) continue;
-    if (!registrados.has(m[2])) registrados.set(m[2], []);
-    registrados.get(m[2]).push(i + 1);
+    const nome = m[0].trim().replace(/,$/, "").split("::").pop();
+    if (!registrados.has(nome)) registrados.set(nome, []);
+    registrados.get(nome).push(i + 1);
   }
   return registrados;
 }

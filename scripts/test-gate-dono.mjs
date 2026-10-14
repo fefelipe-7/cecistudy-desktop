@@ -136,13 +136,13 @@ const casos = [
     nome: "casca registrada que não existe",
     preparar(dir) {
       const p = join(dir, "src-tauri", "src", "lib.rs");
-      writeFileSync(
-        p,
-        readFileSync(p, "utf8").replace(
-          "      commands::migrate,",
-          "      commands::migrate,\n      commands::nao_existe,",
-        ),
-      );
+      const linhas = readFileSync(p, "utf8").split("\n");
+      // Insere depois da primeira linha de registro que existir, para o caso
+      // não depender do formato (`commands::x` ou `mod::comandos::x`).
+      const i = linhas.findIndex((l) => /^\s*(?:\w+::)+\w+,?\s*$/.test(l));
+      if (i === -1) throw new Error("lib.rs não tem nenhum comando registrado");
+      linhas.splice(i + 1, 0, "      nucleo::comandos::nao_existe,");
+      writeFileSync(p, linhas.join("\n"));
     },
     esperado: /lib\.rs registra `nao_existe`/,
   },
