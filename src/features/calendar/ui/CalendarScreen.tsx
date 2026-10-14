@@ -29,18 +29,22 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { isIpcAvailable } from "@/lib/ipc";
 
-import { listEventsInWindow, listResponsibilities, type GridItem } from "../data/bridge.ts";
+import type { GridItem } from "../data/bridge.ts";
+import { completeItem, moveOccurrence } from "../data/bridge.ts";
+import { completeGridItem } from "../data/complete.ts";
+import { calendarStore as store, type CalendarData } from "../data/calendar-store.ts";
 import { seedIfEmpty } from "../data/dev-seed.ts";
 import { isOpenState, stateLabel } from "../domain/commitment.ts";
 import { indexByDay, itemsOn, type DayIndex } from "../domain/day-index.ts";
 import { DEFAULT_SCALE, timeToY, visibleHeight, type GridScale } from "../domain/grid-scale.ts";
 import { layerClass, layerTone } from "../domain/layers.ts";
-import { isOverdue } from "../domain/overdue.ts";
 import {
   addDaysInTz,
+  addMinutes,
   daysInMonth,
   fromPlainDate,
   instant,
+  minutes,
   plainDate,
   toPlainDate,
   type Instant,
@@ -48,6 +52,7 @@ import {
 import type { IanaTimeZone, LayerId, Responsibility } from "../domain/types.ts";
 import { CALENDAR_ZONE } from "../domain/zone.ts";
 import { DayColumn } from "./DayColumn.tsx";
+import { NovoEventoDialog } from "./NovoEvento.tsx";
 import {
   formatClock,
   formatLongDay,
@@ -55,6 +60,7 @@ import {
   formatWeekdayLong,
   formatWeekdayShort,
   hourLabels,
+  toHourMinuteInput,
 } from "./format.ts";
 
 /** Modos da tela. `semana` é o padrão porque é a leitura principal do desktop. */
@@ -90,7 +96,12 @@ function shiftPlainDate(value: string, days: number): string {
 }
 
 export interface CalendarScreenProps {
-  readonly onOpenList: () => void;
+  /**
+   * Opcional desde a `SPEC-D-006`: o Calendário é um módulo do shell e a "Lista"
+   * é modo dele, não uma rota externa. Sem a prop, "Abrir lista" muda o próprio
+   * modo; o shell pode sobrepor com uma navegação se um dia precisar.
+   */
+  readonly onOpenList?: () => void;
 }
 
 export function CalendarScreen({ onOpenList }: CalendarScreenProps) {
@@ -98,6 +109,7 @@ export function CalendarScreen({ onOpenList }: CalendarScreenProps) {
   // por `Date.now()` espalhado: o domínio só conhece instantes.
   const [now, setNow] = useState<Instant>(() => instant(Date.now()));
   const [mode, setMode] = useState<CalendarMode>("semana");
+  const abrirLista = onOpenList ?? (() => setMode("lista"));
   const [anchor, setAnchor] = useState<Instant>(() =>
     // A data civil vem do fuso **da grade**, não de `toISOString()`. Entre 21:00
     // e 00:00 no Brasil, `toISOString()` já devolve o dia seguinte e o app abre na
@@ -107,7 +119,18 @@ export function CalendarScreen({ onOpenList }: CalendarScreenProps) {
   );
   const [items, setItems] = useState<readonly GridItem[]>([]);
   const [responsibilities, setResponsibilities] = useState<readonly Responsibility[]>([]);
-  const [selected, setSelected] = useState<GridItem | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [novoAberto, setNovoAberto] = useState(false);
+  /**
+   * A última falha de escrita, mostrada na faixa da grade.
+   *
+   * Antes as três ações eram `catch {}` — e um `catch` vazio em escrita é pior do
+   * que botão ausente: a usuária clica, a grade não muda, e a única pista é
+   * ela concluir que o app nãoGravou. Concluir e remarcar **já** são recusados
+   * pela regra (transição ilegal, origem do Google, duração), então o silêncio
+   * era o caso comum, não o raro.
+   */
+  const [erroDeEscrita, setErroDeEscrita] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   // A semente de dev só é tentada uma vez por sessão, mesmo que a janela de
   // leitura mude várias vezes.
@@ -149,8 +172,30 @@ export function CalendarScreen({ onOpenList }: CalendarScreenProps) {
     return { from: addDaysInTz(weekStart, -1, ZONE), to: addDaysInTz(weekStart, 8, ZONE) };
   }, [anchor, mode, weekStart]);
 
-  useEffect(() => {
-    let cancelled = false;
+  /**
+   * Geração da leitura em curso (`DP11`).
+   *
+   * O cache remove a leitura duplicada, **não** a desordem: trocar de janela
+   * produz duas leituras concorrentes e a mais antiga pode resolver depois.
+   * `data/calendar-store.test.ts` fixa esse limite num teste que passa.
+   *
+   * O guarda é uma generation, e não um booleano `cancelled`: o booleano
+   * booleano respondia "o efeito foi desmontado", e não "esta é a janela que a
+   * usuária está vendo agora". A generation responde à segunda pergunta, que é a
+   * que importa — duas trocas de janela seguidas desmontam o mesmo efeito, e o
+   * booleano não distingue a primeira da segunda.
+   */
+  const generation = useRef(0);
+
+  /**
+   * A leitura, como função — e não como efeito.
+   *
+   * Ela precisa ser re-executável, porque a primeira coisa que a tela faz depois
+   * de escrever é reler. Com a leitura presa dentro do `useEffect` não havia como
+   * recarregar depois de um `setOccurrenceState` sem trocar a identidade da
+   * janela, e trocar a identidade seria chamar `load` duas vezes sem motivo.
+   */
+  const carregar = useCallback(async (): Promise<void> => {
     // Sem shell Tauri não há backend: a tela mostra o estado vazio em vez de
     // quebrar. É o mesmo caminho do `npm run dev` no browser puro.
     if (!isIpcAvailable()) {
@@ -158,38 +203,45 @@ export function CalendarScreen({ onOpenList }: CalendarScreenProps) {
       return;
     }
 
-    const load = async (): Promise<void> => {
-      const [events, pending] = await Promise.all([
-        listEventsInWindow(window),
-        listResponsibilities(),
-      ]);
-      if (cancelled) return;
-      setItems(events);
-      setResponsibilities(pending);
-    };
+    const minha = ++generation.current;
 
-    void (async () => {
-      try {
-        await load();
-        // A semente roda **depois** da primeira leitura, e só uma vez por sessão:
-        // decidir antes seria decidir sobre um banco que ainda não foi lido, e
-        // decidir a cada troca de janela gastaria uma consulta à toa.
-        if (!cancelled && !seedAttempted.current && (await seedIfEmpty())) {
-          seedAttempted.current = true;
-          await load();
-        }
-      } catch {
-        // Falha de leitura não pode derrubar a tela: o estado vazio já é uma
-        // resposta honesta, e o erro aparece quando a usuária tenta agir.
-      } finally {
-        if (!cancelled) setLoaded(true);
+    try {
+      const aplicar = (data: CalendarData): void => {
+        // Uma leitura mais nova já pediu: esta resposta é obsoleta.
+        if (minha !== generation.current) return;
+        setItems(data.items);
+        setResponsibilities(data.responsibilities);
+      };
+
+      aplicar(await store.read({ mode, window }));
+      // A semente roda **depois** da primeira leitura, e só uma vez por sessão:
+      // decidir antes seria decidir sobre um banco que ainda não foi lido, e
+      // decidir a cada troca de janela gastaria uma consulta à toa.
+      if (!seedAttempted.current && (await seedIfEmpty())) {
+        seedAttempted.current = true;
+        // A semente **é** escrita: `createEvent`, `upsertRecurrence`,
+        // `createResponsibility` e `planBlock` acabaram de rodar. Sem esta
+        // invalidação a tela ficaria mostrando o banco vazio até a próxima
+        // troca de janela — e o defeito seria invisível, porque a grade
+        // vazia é exatamente o estado que a usuária já esperava.
+        store.invalidate("all");
+        aplicar(await store.read({ mode, window }));
       }
-    })();
+    } catch {
+      // Falha de leitura não pode derrubar a tela: o estado vazio já é uma
+      // resposta honesta, e o erro aparece quando a usuária tenta agir.
+    } finally {
+      if (minha === generation.current) setLoaded(true);
+    }
+  }, [mode, window]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [window]);
+  useEffect(() => {
+    // `store` não entra: é um singleton de módulo, e o `eslint` tem razão —
+    // mutá-lo não remonta a tela. `mode` entra porque a decisão de ler
+    // responsabilidade depende dele, e `lista`/`planejamento` compartilham a
+    // mesma janela: sem `mode` no gatilho, trocar entre os dois não releria.
+    void carregar();
+  }, [carregar]);
 
   const days = useMemo(
     () => Array.from({ length: 7 }, (_, index) => addDaysInTz(weekStart, index, ZONE)),
@@ -234,15 +286,72 @@ export function CalendarScreen({ onOpenList }: CalendarScreenProps) {
   const goToday = (): void => setAnchor(fromPlainDate(plainDate(toPlainDate(now, ZONE)), ZONE));
 
   /**
-   * Seleção **não** é estado da grade (DP6).
+   * Seleção **não** é estado da grade (DP6), e é **por id**, não por objeto.
    *
    * Antes `setSelected` vinha pronto para os filhos, e o `memo` nunca acertava
    * porque a função era nova a cada render — mesmo com `items` idêntico. Com o
    * `useCallback`, selecionar um item não propaga para a Semana nenhuma, e é isso
    * que torna "1 render por clique" o comportamento em vez de uma esperança.
+   *
+   * Guardar o **id** e resolver contra `items` é o que impede o painel de
+   * mentir: depois de concluir, a releitura devolve um `GridItem` novo, e um
+   * painel que segurasse o objeto antigo continuaria mostrando "planejado" ao
+   * lado de uma grade já concluída.
    */
-  const select = useCallback((item: GridItem) => setSelected(item), []);
-  const clearSelection = useCallback(() => setSelected(null), []);
+  const select = useCallback((item: GridItem) => setSelectedId(item.id), []);
+  const clearSelection = useCallback(() => setSelectedId(null), []);
+  const selected = useMemo(
+    () => (selectedId === null ? null : (items.find((i) => i.id === selectedId) ?? null)),
+    [items, selectedId],
+  );
+
+  /**
+   * Concluir é a primeira escrita real da tela.
+   *
+   * Três coisas acontecem, e as três importam: o Rust grava o
+   * `execution_record` (INV-3) e valida a transição e a origem, o cache é
+   * invalidado — sem isto a grade continuaria mostrando o estado antigo até a
+   * próxima troca de janela — e a releitura devolve o item novo, que o painel
+   * resolve pelo id.
+   *
+   * `guard_origin` no Rust já recusa um item do Google; aqui nem chegamos a
+   * oferecer o botão. A regra mora no caminho de escrita, e a cortesia é da tela.
+   */
+  const concluir = useCallback(
+    async (item: GridItem): Promise<void> => {
+      setErroDeEscrita(null);
+      try {
+        // Não é `set_occurrence_state`: concluir exige histórico, então passa
+        // por `complete_item`, que grava a execução e reflete o estado.
+        await completeGridItem({ completeItem }, item, instant(Date.now()));
+        store.invalidate("events");
+        await carregar();
+      } catch (falha) {
+        setErroDeEscrita(mensagemDeErro(falha));
+      }
+    },
+    [carregar],
+  );
+
+  const remarcar = useCallback(
+    async (item: GridItem, novoInicio: Instant, novoFim: Instant): Promise<void> => {
+      setErroDeEscrita(null);
+      try {
+        await moveOccurrence(item.id, novoInicio, novoFim);
+        store.invalidate("events");
+        await carregar();
+      } catch (falha) {
+        // A regra recusou: origem do Google ou duração não positiva.
+        setErroDeEscrita(mensagemDeErro(falha));
+      }
+    },
+    [carregar],
+  );
+
+  const eventoCriado = useCallback(async (): Promise<void> => {
+    store.invalidate("all");
+    await carregar();
+  }, [carregar]);
 
   const title = useMemo(() => {
     if (mode === "mes") return formatMonthYear(anchor);
@@ -278,6 +387,10 @@ export function CalendarScreen({ onOpenList }: CalendarScreenProps) {
         </div>
 
         <h2 className="min-w-0 truncate text-[15px] font-semibold capitalize">{title}</h2>
+
+        <Button size="sm" variant="secondary" onClick={() => setNovoAberto(true)}>
+          Novo
+        </Button>
 
         {/* Troca de modo: um `tablist` de verdade. Antes eram `role="tab"`
             soltos — sem `tabIndex` migratório, sem `aria-controls` e sem
@@ -316,6 +429,26 @@ export function CalendarScreen({ onOpenList }: CalendarScreenProps) {
         </div>
       </header>
 
+      {/* Faixa de erro de escrita. `role="status"` para o leitor de tela, e não
+          um `toast`: a falha é sobre **a grade**, e some quando a grade muda de
+          janela — que é quando o erro deixa de valer. */}
+      {erroDeEscrita !== null && (
+        <p
+          role="status"
+          className="border-destructive/40 bg-destructive/10 text-destructive rounded-[8px] border px-3 py-2 text-[12px]"
+        >
+          {erroDeEscrita}
+          <button
+            type="button"
+            onClick={() => setErroDeEscrita(null)}
+            className="ml-2 underline"
+            aria-label="Dispensar aviso"
+          >
+            dispensar
+          </button>
+        </p>
+      )}
+
       <div className="flex min-h-0 flex-1 gap-3">
         <div
           id={`mode-panel-${mode}`}
@@ -339,24 +472,53 @@ export function CalendarScreen({ onOpenList }: CalendarScreenProps) {
             />
           )}
           {mode === "lista" && (
-            <ListView
-              items={items}
-              responsibilities={responsibilities}
-              now={now}
-              onOpenList={onOpenList}
-            />
+            <ListView items={items} responsibilities={responsibilities} onOpenList={abrirLista} />
           )}
           {mode === "planejamento" && (
-            <PlanningView items={items} responsibilities={responsibilities} now={now} />
+            <PlanningView items={items} responsibilities={responsibilities} />
           )}
 
-          {empty && <EmptyState onOpenList={onOpenList} />}
+          {empty && <EmptyState onOpenList={abrirLista} />}
         </div>
 
-        {selected !== null && <ItemPanel item={selected} onClose={clearSelection} />}
+        {selected !== null && (
+          <ItemPanel
+            item={selected}
+            onClose={clearSelection}
+            onConclude={concluir}
+            onReschedule={remarcar}
+          />
+        )}
       </div>
+
+      {/* O formulário abre na data e na hora que a grade está mostrando, e não
+          em `Date.now()`: quem está na Agenda de terça quer criar terça, e uma
+          agenda que sugere segunda obriga a corrigir um campo que ela não
+          errou. O instante ainda é o fuso da grade (`zone.ts`). */}
+      <NovoEventoDialog
+        aberto={novoAberto}
+        onOpenChange={setNovoAberto}
+        dataInicial={toPlainDate(anchor, ZONE)}
+        horaInicial={toHourMinuteInput(anchor)}
+        onCriado={() => void eventoCriado()}
+      />
     </div>
   );
+}
+
+/**
+ * A mensagem que a regra recusou, legível.
+ *
+ * O `invoke` do Tauri embrulha o erro do Rust em string, e o prefixo que ele
+ * acrescenta não ajuda ninguém. Recortar o que é envelope deixa a regra falando,
+ * que é quem tem a resposta.
+ */
+function mensagemDeErro(falha: unknown): string {
+  const texto = falha instanceof Error ? falha.message : String(falha);
+  return texto
+    .replace(/^\s*Error:\s*/, "")
+    .replace(/^erro de banco:\s*/i, "")
+    .trim();
 }
 
 // ---------------------------------------------------------------------------
@@ -654,19 +816,18 @@ function MonthView({
 function ListView({
   items,
   responsibilities,
-  now,
   onOpenList,
 }: {
   readonly items: readonly GridItem[];
   readonly responsibilities: readonly Responsibility[];
-  readonly now: Instant;
   readonly onOpenList: () => void;
 }) {
-  // O atraso é derivado, nunca persistido (D11). Hoje e "próximos" saem do mesmo
-  // predicado, com cortes diferentes.
-  const pending = responsibilities.filter((r) => isOverdue(r, now) || r.state === "planejado");
-  const overdue = pending.filter((r) => isOverdue(r, now));
-  const upcoming = pending.filter((r) => !isOverdue(r, now));
+  // O atraso é derivado, nunca persistido (D11), e chega pronto do backend
+  // (`Responsibility.isOverdue`). Hoje e "próximos" saem do mesmo predicado,
+  // com cortes diferentes.
+  const pending = responsibilities.filter((r) => r.isOverdue || r.state === "planejado");
+  const overdue = pending.filter((r) => r.isOverdue);
+  const upcoming = pending.filter((r) => !r.isOverdue);
 
   return (
     <div className="flex flex-col gap-4">
@@ -716,16 +877,14 @@ function ResponsibilityRow({
 function PlanningView({
   items,
   responsibilities,
-  now,
 }: {
   readonly items: readonly GridItem[];
   readonly responsibilities: readonly Responsibility[];
-  readonly now: Instant;
 }) {
   // §6 responde duas perguntas separadas: quanto foi reservado e quanto saiu.
   const reserved = items.length;
   const open = responsibilities.filter((r) => isOpenState(r.state)).length;
-  const late = responsibilities.filter((r) => isOverdue(r, now)).length;
+  const late = responsibilities.filter((r) => r.isOverdue).length;
 
   return (
     <div className="flex flex-col gap-3">
@@ -755,7 +914,33 @@ function Metric({ label, value }: { readonly label: string; readonly value: numb
 // Painel do item — detalhe da seleção, não uma tela
 // ---------------------------------------------------------------------------
 
-function ItemPanel({ item, onClose }: { readonly item: GridItem; readonly onClose: () => void }) {
+function ItemPanel({
+  item,
+  onClose,
+  onConclude,
+  onReschedule,
+}: {
+  readonly item: GridItem;
+  readonly onClose: () => void;
+  readonly onConclude: (item: GridItem) => void;
+  readonly onReschedule: (item: GridItem, startsAt: Instant, endsAt: Instant) => void;
+}) {
+  /**
+   * INV-6 — um item do Google é somente leitura, e o botão **some** em vez de
+   * recusar. A regra está imposta no Rust (`exigir_origem_editavel`); aqui a
+   * decisão é de não oferecer uma ação que vai falhar, porque um botão que leva
+   * a um erro é pior do que um botão ausente.
+   */
+  const editavel = item.origin !== "google";
+
+  /**
+   * `concluido` não é alcançável de todo estado, e a máquina de estados é a do
+   * Rust: os destinos válidos **vêm no read-model** (`item.allowedTransitions`,
+   * derivados de `domain.rs::destinations_of`). A tela não reimplementa a tabela;
+   * quando pedir um destino ilegal, o `exigir_transicao` do Rust recusa a escrita.
+   */
+  const podeConcluir = item.allowedTransitions.includes("concluido");
+
   return (
     <aside
       aria-label="Detalhe do item"
@@ -764,7 +949,8 @@ function ItemPanel({ item, onClose }: { readonly item: GridItem; readonly onClos
       <div>
         <h3 className="text-[14px] font-semibold">{item.title}</h3>
         <p className="text-muted-foreground mt-0.5 text-[12px]">
-          {toPlainDate(item.startsAt, ZONE)} · {formatClock(item.startsAt)}
+          {toPlainDate(item.startsAt, ZONE)} · {formatClock(item.startsAt)} —{" "}
+          {formatClock(item.endsAt)}
         </p>
       </div>
 
@@ -776,23 +962,112 @@ function ItemPanel({ item, onClose }: { readonly item: GridItem; readonly onClos
         {item.isRecurring && <Badge variant="outline">Recorrente</Badge>}
         {item.overrideKind === "moved" && <Badge variant="outline">Remarcado</Badge>}
         {item.overrideKind === "cancelled" && <Badge variant="destructive">Cancelado</Badge>}
+        {item.hasConflict && <Badge variant="destructive">Conflito</Badge>}
       </div>
 
-      <div className="mt-auto flex gap-2">
-        {/* As duas ações ficam desabilitadas até existirem: um botão que aceita
-            clique e não faz nada é pior que um botão que declara que não está
-            pronto. É a spec 02 que as liga (D17). */}
-        <Button size="sm" variant="secondary" className="flex-1" disabled>
-          Concluir
-        </Button>
-        <Button size="sm" variant="outline" className="flex-1" disabled>
-          Reagendar
-        </Button>
-      </div>
+      {editavel && (podeConcluir || item.state !== "concluido") && (
+        <div className="mt-auto flex gap-2">
+          {podeConcluir && (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="flex-1"
+              onClick={() => onConclude(item)}
+            >
+              Concluir
+            </Button>
+          )}
+          <RescheduleControl item={item} onReschedule={onReschedule} />
+        </div>
+      )}
+      {!editavel && (
+        <p className="text-muted-foreground mt-auto text-[12px]">
+          Item do Google Calendar: somente leitura.
+        </p>
+      )}
       <Button size="sm" variant="ghost" onClick={onClose}>
         Fechar
       </Button>
     </aside>
+  );
+}
+
+/**
+ * Remarcação por dia e hora.
+ *
+ * Deliberadamente **um form**, e não um diálogo: o painel já é o lugar do
+ * detalhe, e um item que abre outro lugar para mudar de horário é dois lugares
+ * para a mesma coisa. A ação real é `moveOccurrence`, que preserva
+ * `original_start` — a identidade da instância continua sendo a data original.
+ */
+function RescheduleControl({
+  item,
+  onReschedule,
+}: {
+  readonly item: GridItem;
+  readonly onReschedule: (item: GridItem, startsAt: Instant, endsAt: Instant) => void;
+}) {
+  const [aberto, setAberto] = useState(false);
+  const [data, setData] = useState(() => toPlainDate(item.startsAt, ZONE));
+  const [hora, setHora] = useState(() => toHourMinuteInput(item.startsAt));
+
+  // Abrir reancora no horário atual: quem edita um item remarcado parte da
+  // posição dele, não da anterior tentativa.
+  const abrir = (): void => {
+    setData(toPlainDate(item.startsAt, ZONE));
+    setHora(toHourMinuteInput(item.startsAt));
+    setAberto(true);
+  };
+
+  const confirmar = (): void => {
+    const inicio = fromPlainDate(plainDate(data), ZONE);
+    const minutesFromInput =
+      Number.parseInt(hora.slice(0, 2), 10) * 60 + Number.parseInt(hora.slice(3, 5), 10);
+    const novoInicio = addMinutes(inicio, minutes(minutesFromInput));
+    // A duração **vem do item**, e não da hora digitada: remarcar muda quando
+    // acontece, não quanto tempo dura. Sem isto, digitar 09:00 num item de duas
+    // horas criaria um item de duas horas que termina às 09:00 — duração zero,
+    // que o Rust recusa.
+    const duracao = item.endsAt - item.startsAt;
+    onReschedule(item, novoInicio, (novoInicio + duracao) as Instant);
+    setAberto(false);
+  };
+
+  if (!aberto) {
+    return (
+      <Button size="sm" variant="outline" className="flex-1" onClick={abrir}>
+        Reagendar
+      </Button>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex gap-1.5">
+        <input
+          type="date"
+          value={data}
+          onChange={(e) => setData(plainDate(e.target.value))}
+          aria-label="Nova data"
+          className="border-border/60 bg-transparent rounded-[6px] border px-2 py-1 text-[12px]"
+        />
+        <input
+          type="time"
+          value={hora}
+          onChange={(e) => setHora(e.target.value)}
+          aria-label="Nova hora"
+          className="border-border/60 bg-transparent rounded-[6px] border px-2 py-1 text-[12px]"
+        />
+      </div>
+      <div className="flex gap-1.5">
+        <Button size="sm" variant="secondary" className="flex-1" onClick={confirmar}>
+          Salvar
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => setAberto(false)}>
+          Cancelar
+        </Button>
+      </div>
+    </div>
   );
 }
 

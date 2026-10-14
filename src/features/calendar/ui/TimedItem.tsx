@@ -48,10 +48,22 @@ export const TimedItem = memo(function TimedItem({
     <button
       type="button"
       onClick={() => onSelect(item)}
-      title={`${item.title} — ${formatClock(item.startsAt)}`}
+      // D7 — a sobreposição é derivada no Rust e **sinalizada, nunca
+      // bloqueante**. O aviso vai no `title` (para leitor de tela e para o hover)
+      // e numa faixa na borda (para quem olha a grade de relance). Nenhuma das
+      // duas muda largura, altura ou cor de fundo do item: item sobreposto
+      // continua sendo lido como item.
+      title={
+        item.hasConflict
+          ? `${item.title} — ${formatClock(item.startsAt)} · conflita com outro item`
+          : `${item.title} — ${formatClock(item.startsAt)}`
+      }
+      aria-label={item.hasConflict ? `${item.title}, conflita com outro item` : undefined}
       className={`absolute overflow-hidden rounded-[5px] border px-1 py-0.5 text-left text-[10.5px] leading-tight ${layerClass(
         layerTone(item.layerId as LayerId),
-      )} ${item.overrideKind === "cancelled" ? "opacity-50 line-through" : ""}`}
+      )} ${item.overrideKind === "cancelled" ? "opacity-50 line-through" : ""} ${
+        item.hasConflict ? "border-r-destructive border-r-[3px]" : ""
+      }`}
       style={{
         top: placement.top,
         height: placement.height,

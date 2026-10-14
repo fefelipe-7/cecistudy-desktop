@@ -112,6 +112,13 @@ export interface Responsibility extends Auditable {
   readonly origin: Origin;
   readonly ownerRef?: OwnerRef;
   readonly parentId: ResponsibilityId | null;
+  /**
+   * INV-4 — atraso **derivado**, nunca persistido (D11). Não existe coluna de
+   * atraso no schema; o backend calcula na leitura com `domain::is_overdue`, e
+   * este campo é esse resultado. A UI não recalcula: quando o Rust e o espelho
+   * divergirem, o Rust está certo.
+   */
+  readonly isOverdue: boolean;
 }
 
 export type StepState = "pendente" | "em_andamento" | "concluida";

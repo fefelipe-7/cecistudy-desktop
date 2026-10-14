@@ -36,6 +36,33 @@ const zone = CALENDAR_ZONE;
 /** `HH:MM` — a hora que a grade e a Agenda mostram. `hour12: false` evita AM/PM. */
 const clock = formatter("pt-BR", { hour: "2-digit", minute: "2-digit", hour12: false }, zone);
 
+/**
+ * O **mesmo** `HH:MM`, mas como valor para um `<input type="time">`.
+ *
+ * `formatClock` devolve o que a grade mostra; este devolve o que um controle de
+ * edição precisa — e precisa ser o mesmo relógio do fuso da grade, não o do
+ * sistema. São dois formatadores com as mesmas opções, separados porque os usos
+ * são diferentes: um é rótulo, o outro é valor de formulário.
+ */
+const clockInput = formatter(
+  "en-GB",
+  { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: zone },
+  zone,
+);
+
+/**
+ * `HH:MM` de um instante, no fuso da grade, pronto para `<input type="time">`.
+ *
+ * `en-GB` e não `pt-BR` de propósito: em pt-BR o `Intl` pode devolver `09:05`
+ * com prefixo de período em alguns ambientes, e um `<input type="time">` recusa
+ * qualquer coisa que não seja `HH:MM`. O valor do formulário é dado de máquina, e
+ * máquina fala `en-GB` — o rótulo visível continua sendo pt-BR, feito por
+ * `formatClock`.
+ */
+export function toHourMinuteInput(value: Instant): string {
+  return clockInput.format(value);
+}
+
 /** `seg`, `ter`, … — o cabeçalho de dias da Semana e o dia da Agenda. */
 const weekdayShort = formatter("pt-BR", { weekday: "short" }, zone);
 

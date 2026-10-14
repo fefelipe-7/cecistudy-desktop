@@ -35,6 +35,11 @@
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  /* Acento de marca (`SPEC-D-014` D91 / `SPEC-C-013` D5). Separado de
+     `--primary` de propósito: `--primary` é a cor de **ação** do sistema,
+     `--brand` é a identidade `cecistudy ♡`. */
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -92,17 +97,6 @@
 :root {
   --radius: 0.5rem;
 
-  /* As duas larguras da barra lateral, e onde elas vêm.
-     Expandida em 240px: a banda em que nenhum rótulo em pt-BR trunca — o mais
-     longo é "TCC & Projetos" — e 240px é múltiplo de 8, então os itens caem na
-     grade. 228px (o valor anterior) truncava.
-     Recolhida em 48px: trilho de ícone com item de 32px e 8px de gutter, que é a
-     densidade máxima em que o alvo ainda passa com folga por WCAG 2.5.8 (mínimo
-     24×24) em vez de por exceção. 44px dava item de 28px, fora da faixa de
-     32–36px de `DESIGN.md`. */
-  --rail-expandida: 240px;
-  --rail-recolhida: 3rem;
-
   /* Um único override corrige o Radix inteiro sem editar quatro arquivos do set
      curado (AGENTS.md:12). O `tw-animate-css` lê `var(--tw-duration, .15s)` e
      `var(--tw-ease, ease)`: declarar aqui faz todo `animate-in`/`animate-out` do
@@ -145,6 +139,12 @@
   --accent-foreground: oklch(0.445 0.134 324.8);
   --popover-foreground: oklch(0.326 0.116 325);
   --primary-foreground: oklch(1 0 0);
+  /* Acento de marca `cecistudy ♡` (SPEC-D-014 D91). Derivado de `#D4617C`,
+     o rosa-marca do mobile (`cecistudy/.context/themes/01-rosa-claro.md`).
+     Fica em `--brand`, separado de `--primary` (a cor de ação do sistema), para
+     que marca e ação possam divergir sem uma arrastar a outra. */
+  --brand: oklch(0.64 0.147 7.5);
+  --brand-foreground: oklch(1 0 0);
   --sidebar-foreground: oklch(0.445 0.17 354.5);
   --secondary-foreground: oklch(0.445 0.134 324.8);
   --destructive-foreground: oklch(1 0 0);
@@ -184,6 +184,10 @@
   --accent-foreground: oklch(0.965 0.009 341.8);
   --popover-foreground: oklch(0.965 0.009 341.8);
   --primary-foreground: oklch(0.985 0.01 346.4);
+  /* Mesmo acento `cecistudy ♡`, clareado para manter contraste AA sobre o fundo
+     escuro (SPEC-D-014 D91). */
+  --brand: oklch(0.72 0.15 7.5);
+  --brand-foreground: oklch(0.2 0.02 340);
   --sidebar-foreground: oklch(0.88 0.028 343.7);
   --secondary-foreground: oklch(0.9 0.034 308);
   --destructive-foreground: oklch(1 0 0);
@@ -454,22 +458,76 @@
   transition-property: transform;
 }
 
-/* A largura da barra lateral **não anima**, e a decisão é do app, nãoesquema:
-   `docs/performance/02-transicoes-animacoes.md:279` (DM4) proíbe transicionar
-   `width`, e o item nº1 do inventário de performance é a própria barra lateral,
-   classificado 🔴 "Proibido por DM4" — porque `width` em flex row reflowa o
-   `<main>` inteiro, que na visão Calendário contém a grade de 7 colunas com dois
-   `sticky` + `backdrop-blur`. Recolher é **corte seco**, que é a saída 2 do DM4 e a
-   saidapreferred é o corte seco (:286).
+/* Gaveta do mobile (`fechada`). É `translate`, não `width`: a gaveta é
+   `position: fixed`, então nada depende da largura dela e o movimento é
+   composto. A curva é `standard`, não `spatial`, porque não é rearranjo de
+   nada — a curva de rearranjo aqui mostraria a gaveta chegando *depois* de
+   onde ela nasce. */
+@utility motion-drawer {
+  transition:
+    transform var(--duration-medium) var(--ease-standard),
+    opacity var(--duration-medium) var(--ease-standard);
+}
 
-   O que sobra de transição aqui é o **rótulo**, em opacidade — que é composite e
-   está na lista do que DM4 permite. A caixa vai de 240px para 48px sem quadro
-   intermediário; o texto cruza os 150ms. O resultado lê como uma decisão, e não
-   como um salto. */
-@utility motion-rail-label {
-  transition-property: opacity;
-  transition-duration: var(--duration-small);
-  transition-timing-function: var(--ease-standard);
+/* Abrir e fechar um grupo (filhos da disciplina). A propriedade é
+   `grid-template-rows`, de `0fr` para `1fr`, e não `height` nem `max-height`:
+   altura animada vai para um número que não é a altura do conteúdo, e
+   `translate` esconderia o grupo sem revelar os filhos.
+
+   Curva `standard` e duração `medium` — as mesmas da gaveta. É a mesma decisão
+   duas vezes: abrir um grupo e abrir a barra são o mesmo gesto em escalas
+   diferentes, e gesture-com-uma-duração-e-outro com outra é o tipo de diferença
+   que a pessoa sente sem conseguir nomear. */
+@utility motion-disclosure {
+  transition:
+    grid-template-rows var(--duration-medium) var(--ease-standard),
+    opacity var(--duration-medium) var(--ease-standard);
+}
+
+/* ── Recolher/expandir a barra lateral ────────────────────────────────────────
+   A largura **não** anima (DM4): 200ms dela é reflow do `<main>` inteiro, que na
+   visão Calendário é a grade de 7 colunas. A largura é cortada num quadro, e o
+   que se move é o **conteúdo** — `transform` e `opacity`, que são compostos.
+   É a saída (2) da Exceção 1 de DM4, com o corte já feito e o movimento no
+   lugar certo.
+
+   Os dois lados são assimétricos de propósito. Recolher, o rótulo é cortado junto
+   com a coluna: fading dele custaria um quadro de `width` para mostrar algo que
+   o recorte esconde. Expandir, o rótulo **aparece** depois do corte, e aí o
+   fade-in é a única forma de ele não piscar.                                                */
+@utility motion-rail {
+  transition:
+    translate var(--duration-small) var(--ease-standard),
+    scale var(--duration-small) var(--ease-standard);
+}
+
+/* Variante do ícone, que já tinha `transition-opacity` no hover. Estar separado
+   não é estética: `transition` é um atalho que **sobrescreve** a lista de
+   `transition-property`, e duas utilities no mesmo elemento disputam o mesmo
+   atalho — quem vencesse passaria a depender da ordem de geração do Tailwind.
+   Aqui cada elemento da barra tem no máximo uma. */
+@utility motion-rail-icon {
+  transition:
+    translate var(--duration-small) var(--ease-standard),
+    scale var(--duration-small) var(--ease-standard),
+    opacity var(--duration-micro) linear;
+}
+
+/* O que entra depois do corte: rótulo, divisória de grupo, ponto de badge. O
+   `@starting-style` abaixo faz o fade-in sem JS e sem `allow-discrete`. */
+@utility motion-rail-in {
+  opacity: 1;
+  translate: 0 0;
+  transition:
+    opacity var(--duration-small) var(--ease-entrance),
+    translate var(--duration-small) var(--ease-entrance);
+}
+
+@starting-style {
+  .motion-rail-in {
+    opacity: 0;
+    translate: -3px 0;
+  }
 }
 
 @keyframes cross-fade-in {
@@ -491,6 +549,43 @@
 
   .motion-item {
     translate: none;
+    transition-property: opacity;
+    transition-duration: var(--duration-micro);
+    transition-timing-function: linear;
+  }
+
+  /*
+   * A barra lateral sob `reduce` perde o **deslocamento** e mantém a
+   * opacidade — o mesmo nível 3 do cross-fade. O corte da largura é layout, não
+   * motion, e continua corte: não há como animar a largura sem 12 quadros de
+   * reflow da grade, e `reduce` não autoriza pagar esse preço.
+   */
+  .motion-rail {
+    translate: none;
+    scale: none;
+    transition-property: opacity;
+  }
+
+  .motion-rail-icon {
+    translate: none;
+    scale: none;
+    transition-property: opacity;
+  }
+
+  .motion-rail-in {
+    translate: none;
+    transition-property: opacity;
+    transition-duration: var(--duration-micro);
+    transition-timing-function: linear;
+  }
+
+  /*
+   * `grid-template-rows` não tem `translate` para zerar: sob `reduce` ele
+   * some inteiro. O grupo continua abrindo e fechando — quem pediu a redução
+   * pediu para não *assistir*, não para não poder usar (DM6, nível 1).
+   */
+  .motion-drawer,
+  .motion-disclosure {
     transition-property: opacity;
     transition-duration: var(--duration-micro);
     transition-timing-function: linear;

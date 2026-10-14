@@ -11,6 +11,15 @@
  * Quatro decisões, e a última é a que evita a abstração errada:
  *
  * 1. **Chave é a janela, não a tela.** `Map<"from:to", GridItem[]>`.
+ *
+ *    Divergência declarada em relação ao texto da `DP1`, que previa
+ *    `"<mode>:<from>:<to>"`: dois modos que caem na mesma janela compartilham a
+ *    entrada, e é isso que se quer. `lista` e `planejamento` produzem a mesma
+ *    janela e precisam das mesmas responsabilidades; `agenda` e `semana`
+ *    divergem em janela, e então nem se encontram. O modo decide **se** a
+ *    responsabilidade é lida (item 3), não **com qual chave** o evento é
+ *    guardado. Incluir o modo na chave faria a segunda visita a `lista` custar
+ *    um `invoke` que não precisava.
  * 2. **Escrita invalida; leitura não.** Uma releitura só acontece depois de uma
  *    escrita. É a única invalidação que importa aqui, e é a que o Rust entende.
  * 3. **Responsabilidades têm cache próprio.** A consulta é sem filtro, sem janela
@@ -27,7 +36,7 @@
  * Testável com `node --test` sem Rust e sem Tauri, porque o leitor é injetado.
  */
 
-import type { GridItem } from "./bridge.ts";
+import { listEventsInWindow, listResponsibilities, type GridItem } from "./bridge.ts";
 import type { Instant, Responsibility, Window } from "../domain/types.ts";
 
 /** Modos que precisam de responsabilidades para mostrar alguma coisa. */
@@ -77,12 +86,20 @@ export function createCalendarStore(reader: CalendarReader): CalendarStore {
   let responsibilities: readonly Responsibility[] | null = null;
 
   /**
-   * Duas leituras concorrentes da mesma janela compartilham **uma** chamada.
+   * Duas leituras concorrentes da **mesma** janela compartilham **uma** chamada.
    *
-   * Sem isto, trocar de modo rapidamente dispara duas leituras sobrepostas, e a
-   * segunda `setItems` chega depois da primeira com dados de uma janela que a
-   * usuária já não está vendo — o `cancelled` do efeito era o remendo para isso,
-   * e ele some junto com o cache.
+   * Isto remove a duplicata, não a desordem. Trocar de modo produz janelas
+   * **diferentes**, logo chaves diferentes, logo duas leituras realmente
+   * concorrentes — e se a mais antiga resolver depois, quem escreve por último é
+   * a janela que a usuária já deixou. A docstring deste arquivo dizia antes que o
+   * cache resolvia isso e que o `cancelled` da tela "sumia junto com o cache".
+   * **Não era verdade**, e o teste `calendar-store.test.ts` existe para manter
+   * a afirmação falsa fora daqui: o caso "janelas diferentes resolvem fora de
+   * ordem" está lá, e é um teste que **passa**, porque descreve o limite real.
+   *
+   * Quem garante a ordem é o chamador, por geração crescente
+   * (`DP11` em `docs/performance/01-performance-render.md`). Cache e guarda de
+   * ordenação são duas coisas diferentes, e as duas são necessárias.
    *
    * Vive **dentro** da factory: um mapa no escopo do módulo seria compartilhado
    * entre duas instâncias, e a deduplicação de uma store responderia por uma
@@ -168,3 +185,19 @@ export function createCalendarStore(reader: CalendarReader): CalendarStore {
 
 /** Atalho interno para a tela não precisar repetir a lista vazia. */
 export { NO_ITEMS, NO_RESPONSIBILITIES };
+
+/**
+ * A instância que a tela usa (`DP11`).
+ *
+ * Singleton de **módulo**, e não de contexto React: o cache precisa sobreviver
+ * à troca de janela e ao remontar da tela, e o `DP10` já recusou
+ * `useSyncExternalStore` por enquanto. Uma instância por tela perderia tudo o
+ * que o cache existe para guardar.
+ *
+ * O leitor é o `bridge` de verdade, e não um dublê: assim a tela não tem como
+ * ler por fora do cache sem passar por ele.
+ */
+export const calendarStore: CalendarStore = createCalendarStore({
+  listEventsInWindow: (window) => listEventsInWindow(window),
+  listResponsibilities: () => listResponsibilities(),
+});

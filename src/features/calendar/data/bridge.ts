@@ -57,6 +57,29 @@ export interface GridItem {
   /** `override` é palavra reservada na semântica do Rust; aqui vira `overrideKind`. */
   readonly overrideKind: "none" | "cancelled" | "moved";
   readonly isRecurring: boolean;
+  /**
+   * D7 — sobreposição é derivada, sinalizada e **nunca bloqueante**.
+   *
+   * A regra é de `src-tauri/src/domain.rs` e a marca vem **no read-model**: a
+   * tela não recalcula. O espelho `domain/overlap.ts` existe só para o golden,
+   * e `golden/overlap.jsonl` é o contrato que prova que os dois concordam.
+   * Quando discordarem, o Rust está certo.
+   */
+  readonly hasConflict: boolean;
+  /**
+   * INV-2 / INV-6 — a origem viaja na leitura para que a tela **não ofereça**
+   * uma escrita sobre um item do Google. O Rust já recusa (`guard_origin`), mas
+   * recusar depois do clique é pior do que não oferecer: a usuária recebe um
+   * erro onde ela esperava uma ação.
+   */
+  readonly origin: string;
+  /**
+   * D1.3 — destinos de estado válidos a partir de `state`, derivados do backend
+   * (`domain::destinations_of`). A tela decide quais ações oferecer com isto, e
+   * **não** reimplementa a máquina de estados. Se oferecer algo ilegal, o
+   * `exigir_transicao` do Rust ainda recusa — a regra continua num lugar só.
+   */
+  readonly allowedTransitions: readonly ItemState[];
 }
 
 interface ResponsibilityWire {
@@ -71,6 +94,14 @@ interface ResponsibilityWire {
   readonly origin: string;
   readonly ownerId: string | null;
   readonly parentId: string | null;
+  /**
+   * INV-4 — atraso **derivado**, nunca persistido. Não existe coluna de atraso
+   * no schema; o Rust calcula na leitura com `domain::is_overdue`, e este campo
+   * é esse resultado — a UI não recalcula. O espelho `domain/overdue.ts` existe
+   * só para o golden, e `golden/overdue.jsonl` é o contrato que prova que os
+   * dois concordam. Quando discordarem, o Rust está certo.
+   */
+  readonly isOverdue: boolean;
 }
 
 /** Instante epoch ms ↔ `Instant` brandado. Só aqui o `number` vira `Instant`. */
@@ -109,6 +140,7 @@ export function toResponsibility(wire: ResponsibilityWire): Responsibility {
     plannedDuration: wire.plannedDuration === null ? null : (wire.plannedDuration as Minutes),
     origin: wire.origin as Responsibility["origin"],
     parentId: wire.parentId as ResponsibilityId | null,
+    isOverdue: wire.isOverdue,
     ...(wire.ownerId === null
       ? {}
       : { ownerRef: { ownerType: wire.origin as never, ownerId: wire.ownerId } }),
@@ -355,15 +387,4 @@ export async function recordExecution(
   record: ExecutionInput,
 ): Promise<void> {
   await invoke("record_execution", { payload: { target, record } });
-}
-
-/**
- * Transição de estado que **não** é conclusão.
- *
- * O Rust recusa `concluido` por aqui (INV-3) e recusa transição fora da tabela
- * de §3.1. Esta função não decide nada disso: quem decide é o backend, e o
- * erro volta como rejeição da promessa.
- */
-export async function setItemState(target: ExecutionTargetWire, state: ItemState): Promise<void> {
-  await invoke("set_item_state", { payload: { target, state } });
 }
