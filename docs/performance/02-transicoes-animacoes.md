@@ -524,7 +524,73 @@ Decisão: a sinalização de D7 (sobreposição derivada, "apenas legibilidade")
 @utility motion-spatial {
   transition: transform var(--duration-large) var(--ease-spatial);
 }
+@utility motion-rail {
+  transition:
+    translate var(--duration-small) var(--ease-standard),
+    scale var(--duration-small) var(--ease-standard);
+}
+@utility motion-rail-icon {
+  transition:
+    translate var(--duration-small) var(--ease-standard),
+    scale var(--duration-small) var(--ease-standard),
+    opacity var(--duration-micro) linear;
+}
+@utility motion-rail-in {
+  opacity: 1;
+  translate: 0 0;
+  transition:
+    opacity var(--duration-small) var(--ease-entrance),
+    translate var(--duration-small) var(--ease-entrance);
+}
+@starting-style {
+  .motion-rail-in {
+    opacity: 0;
+    translate: -3px 0;
+  }
+}
+@utility motion-drawer {
+  transition:
+    transform var(--duration-medium) var(--ease-standard),
+    opacity var(--duration-medium) var(--ease-standard);
+}
+@utility motion-disclosure {
+  transition:
+    grid-template-rows var(--duration-medium) var(--ease-standard),
+    opacity var(--duration-medium) var(--ease-standard);
+}
 ```
+
+`motion-drawer` e `motion-disclosure` também entraram em 2026-10-05, e as duas
+são a mesma decisão aplicada em escalas diferentes: abrir a gaveta do mobile e
+abrir um grupo de disciplina são o mesmo gesto, então têm a **mesma** duração e a
+**mesma** curva. Duas vezes com valores diferentes é o tipo de diferença que a
+pessoa sente e não consegue nomear.
+
+`motion-disclosure` fica em `grid-template-rows` de propósito, e a justificativa
+inteira está em `SidebarNav.tsx`: `height` anima para um número que não é a
+altura do conteúdo, e `translate` esconderia o grupo sem revelar os filhos.
+
+Sob `reduce`, as duas perdem `transform`/`grid-template-rows` e ficam só com
+`opacity`. O grupo e a gaveta **continuam abrindo e fechando**: quem pediu a
+redução pediu para não *assistir*, não para não poder usar (DM6 nível 1).
+
+As três últimas entraram em 2026-10-05, para a recolha da barra lateral, e
+diferem das outras duas por uma razão que vale registrar: **elas não animam
+`width`**, porque DM4 proíbe, e por isso precisam que o *layout* dos dois lados
+seja idêntico. Recentralizar o ícone por `justify-content` ou por `padding` o
+moveria por layout — num quadro, sem valor intermediário — e a transição não
+teria o que interpolar. O deslocamento de 4px é então um `translate` explícito,
+com alvo medido (recuo de 10px → centro de 14px na coluna de 44px).
+
+`motion-rail-icon` é separada de `motion-rail` porque o elemento já tinha
+`transition-opacity` no hover, e `transition` é um atalho que **sobrescreve**
+`transition-property`: duas utilities no mesmo elemento disputam o mesmo atalho
+e quem vencer passa a depender da ordem de geração do Tailwind. Regra: no máximo
+uma utility de transition por elemento.
+
+`motion-rail-in` cobre só a **entrada**. A saída do rótulo é o corte do
+`overflow-hidden`, e um fade-out custaria um quadro de `width` para mostrar algo
+que o recorte esconde — o mesmo cálculo de DM4, aplicado ao outro lado.
 
 Dívida registrada sobre o `--tw-ease` global: ele muda a curva de **entrada** de todos os `animate-in` e `animate-out`; a assimetria entrada/saída vem da **duração** (200ms na base, 150ms no `closed`), não de curvas diferentes. Quando existir uma segunda superfície, reavaliar se `animate-out` deve ler um token próprio.
 
@@ -775,7 +841,7 @@ Cada fase é CSS/TypeScript puro exceto onde anotado. Nenhuma altera `src-tauri/
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Editar        | `src/styles.css` — bloco `@theme inline` (após `:63`): `--duration-*` (5), `--ease-*` (5), `--animate-surface-in/out`, `--animate-item-in`, `--animate-cross-fade-in` + os `@keyframes` correspondentes |
 | Editar        | `src/styles.css` — `:root` (após `:103`): `--tw-duration: var(--duration-medium)`, `--tw-ease: var(--ease-entrance)`, `--surface-raised` (DM3b, DM9)                                                    |
-| Editar        | `src/styles.css` — `@utility` (após `:205`): `motion-surface`, `motion-surface-closed`, `motion-item`, `motion-cross-fade`, `motion-state`, `motion-gesture`, `motion-spatial`                          |
+| Editar        | `src/styles.css` — `@utility` (após `:205`): `motion-surface`, `motion-surface-closed`, `motion-item`, `motion-cross-fade`, `motion-state`, `motion-gesture`, `motion-spatial`, `motion-rail`, `motion-rail-icon`, `motion-rail-in`, `motion-drawer`, `motion-disclosure` |
 | Editar        | `src/styles.css:168-176` — reescrever o bloco `reduce` (DM6): `+ animation-iteration-count: 1 !important`; adicionar `prefers-reduced-transparency` e `prefers-contrast` (R2, R3)                       |
 | Criar         | `src/hooks/use-reduced-motion.ts` — `matchMedia("(prefers-reduced-motion: reduce)")` + listener de `change` (R5, DM6)                                                                                   |
 | **Não tocar** | `src/components/ui/**` (DM8). Nenhum componente deve mudar de aparência com esta fase                                                                                                                   |

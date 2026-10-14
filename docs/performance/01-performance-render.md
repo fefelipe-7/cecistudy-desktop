@@ -1,4 +1,4 @@
-﻿# Spec de Performance 01 — Render, IPC e custo de partida do Campus
+# Spec de Performance 01 — Render, IPC e custo de partida do Campus
 
 Data: 2026-09-29
 Escopo: auditar a performance de render do front-end (React 19 + Vite 8), do IPC (`invoke`/SQLite/Rust) e do custo de partida do shell Tauri/Wry/WebView2, e fechar as decisões que transformam o diagnóstico em trabalho executável.
@@ -316,6 +316,32 @@ Decisão: o cache de DP1 é um módulo com `Map` privado, chave composta e API d
 Justificativa: `useSyncExternalStore` aqui seria um store com um consumidor e sem eventos para consumir. Introduzi-lo agora cria uma abstração que a spec 05 vai ter que reorganizar.
 Alternativa rejeitada: contexto React com `useMemo` no valor (contexto não memoizado é a causa nº 1 de re-render em árvore grande, e aqui seria um store com um consumidor); Zustand (dependência nova para um `Map`).
 Consequência: `P1` entrega um módulo testável por `node --test`, sem React nenhum — coerente com `AGENTS.md:17`: o cache é **dados**, não domínio, então vive em `data/`, não em `domain/`.
+
+**DP11 — O cache é ligado à tela, e a guarda de ordenação é por geração, não por boolean.**
+
+> Executada em 2026-10-03. Antes dela, `calendar-store.ts` era código morto: escrito por inteiro, com API completa, e **sem um único importador e sem um único teste**, enquanto a docstring do arquivo afirmava que removia um defeito que continuava vivo em `CalendarScreen.tsx`. Isto é o débito **C17**.
+
+Decisão, em três partes:
+
+1. `calendar-store.ts` exporta `calendarStore`, um **singleton de módulo** com o `bridge` de verdade injetado. A tela não tem como ler por fora do cache. Singleton e não contexto React, porque o cache precisa sobreviver à troca de janela e ao remontar da tela — o `DP10` já recusou `useSyncExternalStore` por enquanto.
+2. O efeito de carga de `CalendarScreen` passa a ler por `store.read({ mode, window })` e perde o `Promise.all` sobre `listEventsInWindow`/`listResponsibilities`. `mode` entra no gatilho, porque a decisão de ler responsabilidade depende dele e `lista`/`planejamento` compartilham a mesma janela.
+3. **A guarda booleana `cancelled` sai, e entra uma generation crescente.** `const minha = ++generation.current`, e `setItems` só escreve se `minha === generation.current`.
+
+Justificativa, e o segundo item é o que ninguém tinha visto:
+
+- `listResponsibilities` hoje dispara nos **cinco** modos. Três deles — `semana`, `mes` e `agenda` — não mostram uma linha do resultado, e a consulta do Rust (`commands.rs:550-556`) é sem filtro, sem janela e **sem `LIMIT`**. É a mais cara do arquivo, chamada à toa em três de cinco modos.
+- Duas voltas no tempo custavam duas materializações de recorrência no Rust sem que o banco tivesse mudado.
+- **O `cancelled` não resolvia o que a docstring do store dizia que ele resolvia.** `inFlightEvents` deduplica por **chave de janela**; trocar de modo produz janela **diferente**, logo duas leituras realmente concorrentes, e se a antiga resolver depois quem escreve por último é a janela velha. Um booleano `cancelled` respondia "o efeito foi desmontado", não "esta é a janela que a usuária está vendo agora" — e duas trocas de janela seguidas desmontam o mesmo efeito, sem que o booleano distinga a primeira da segunda. Remover o guarda com base na promessa da docstring teria **introduzido** um render obsoleto.
+
+Alternativa rejeitada: (a) **apagar o store** e manter o `cancelled` — some com a evidência do problema, não com o problema: as três consultas caras continuam, e o defeito reaparece a cada mudança de janela; (b) ligar o store e manter o `cancelled` — dois mecanismos para uma corrida, e o que mascara escrita obsoleta é justamente o que se queria aposentar; (c) `useSyncExternalStore` — é o caminho recusado no `DP10`, adiado para a spec 05; (d) generation **dentro** do store — seria a abstração certa, mas exige que o store saiba qual das janelas em voo é a atual, e a store não tem tela. A ordem é do chamador.
+
+Consequência, e a metade que ainda está por vir:
+
+- `cancelled` sai da tela; o que fica é uma generation, que é um mecanismo diferente e mais forte.
+- **`invalidate` ainda não tem chamador de produção.** Os 12 comandos de escrita de `bridge.ts` — `moveOccurrence`, `updateEvent`, `setOccurrenceState`, `completeItem`, `recordExecution`, `planBlock`, … — estão todos exportados e **nenhum é chamado pela UI**; o único escritor é `dev-seed.ts`. Então a invalidação está exercitada hoje pela **semente**, e o resto chega junto com a UI de escrita.
+- A semente é tratada como escrita: `seedIfEmpty()` que devolve `true` invalida antes de reler. Sem isso a tela mostraria o banco vazio até a próxima troca de janela, e **o defeito seria invisível**, porque a grade vazia é exatamente o estado que a usuária já esperava.
+- `data/` ganha suíte própria: `calendar-store.test.ts`, 10 casos, incluindo um que **descreve o limite** ("janelas diferentes resolvem fora de ordem") e por isso **passa**. O `npm run test` passou a varrer `data/` além de `domain/`; sem isso o arquivo nem seria executado.
+- Divergência declarada em relação ao texto do `DP1`: a chave é `"<from>:<to>"` e **não** `"<mode>:<from>:<to>"`. O modo decide **se** a responsabilidade é lida, não com qual chave o evento é guardado — e incluir o modo na chave faria a segunda visita a `lista` custar um `invoke` que não precisava. Registrado no cabeçalho do módulo.
 
 ---
 

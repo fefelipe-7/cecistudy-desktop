@@ -3,7 +3,7 @@
 Três specs de implementação derivadas de uma auditoria do código atual do `cecistudy-desktop` (Tauri v2 + React 19 + Vite 8 + WebView2). Cobre os três eixos pedidos: **performance** (custo de render, IPC e arranque), **transições/animações** (sistema de motion) e **fluidez** (interação, arraste, input).
 
 Data: 2026-09-29
-Status: **especificação — nada foi implementado.** Todas as medições citadas nas specs 01 e 03 são **estimativas derivadas da leitura do código**, marcadas como tal. A Fase P0 da spec 01 existe justamente para substituí-las por número medido.
+Status: **especificação.** Esta linha descreve 2026-09-29, quando nada tinha sido implementado. **Em 2026-10-03, 15 das 36 decisões existem no código** — ver §"Status por item, medido contra o código (2026-10-03)", que é a fonte da verdade para o que está feito. Todas as medições citadas nas specs 01 e 03 continuam sendo **estimativas derivadas da leitura do código**, marcadas como tal: a Fase P0 não rodou, e nenhuma delas foi substituída por número medido.
 
 **As decisões de `docs/calendario/` continuam valendo.** Nenhuma destas specs reabre D1..D46 nem INV-1..INV-7. Onde performance e domínio parecessem conflitar, o domínio vence e o custo se resolve por outro caminho.
 
@@ -18,6 +18,143 @@ Status: **especificação — nada foi implementado.** Todas as medições citad
 | 01   | [`01-performance-render.md`](01-performance-render.md)     | Custo de render, IPC/Rust/SQLite, bundle, arranque, paint                                  | `DP1..DP10` | `P0..P7` | 479    |
 | 02   | [`02-transicoes-animacoes.md`](02-transicoes-animacoes.md) | Sistema de motion: tokens, curvas, catálogo de gestos, o que nunca anima                   | `DM1..DM12` | `M0..M5` | 849    |
 | 03   | [`03-fluidez-interacao.md`](03-fluidez-interacao.md)       | Arraste, resize, criação por gesto, teclado, scroll, cancelamento, acessibilidade do gesto | `DF1..DF14` | `F0..F7` | 764    |
+
+## Status por item, medido contra o código (2026-10-03)
+
+Item 5.2 da F5 (débito C12). **O cabeçalho deste arquivo diz "nada foi
+implementado". Isso era verdade em 2026-09-29 e está errado hoje** — 15 das 36
+decisões existem no código. O status abaixo foi medido por leitura, não copiado
+das specs; `caminho:linha` é a evidência.
+
+Placar: **15 implementadas · 4 parciais · 17 propostas · 0 obsoletas.** (`DP1`,
+`DP10` e `DP11` saíram de "parcial" para "implementado" depois da ligação do
+cache; ver a data da tabela.)
+
+> Regra do grupo: **contagem literal sem o comando que a produz envelhece e vira
+> mentira.** A tabela abaixo é um ponto no tempo. Ao reexecutar, o comando que
+> reproduz é `npm run verify` mais a leitura por `caminho:linha`; se o número
+> divergir, o código ganhou e a tabela está velha.
+
+### `01-performance-render.md` — `DP1..DP10`
+
+| # | Decisão | Status | Evidência |
+|---|---|---|---|
+| DP1 | Cache por janela, invalidado por escrita | **implementado** | `data/calendar-store.ts:58-167` + singleton `:171-190`; a tela lê por `store.read` (`ui/CalendarScreen.tsx:196-245`). Ver `DP11` |
+| DP2 | `Intl` é infraestrutura, singleton de módulo | **implementado** | `ui/format.ts:21-27`, `domain/time.ts:97-102` |
+| DP3 | Relógio de 60s não propaga para a grade | **proposto** | o oposto acontece: `ui/CalendarScreen.tsx:119` → `:327` → `WeekView` recalcula em `:387-389` |
+| DP4 | Ponte assíncrona, materialização sob demanda | **proposto** | zero `async fn`; `commands.rs:535` é `pub fn`, materialização dentro da leitura em `:538-539` |
+| DP5 | Sem virtualização agora; o gate decide depois | **parcial** | a metade negativa vale (sem `@tanstack/react-virtual`), mas o gate nunca rodou: sem `scripts/measure-bundle.mjs` |
+| DP6 | A fronteira de estado é `items`, não o estado da tela | **implementado** | `CalendarScreen.tsx:202,244-245`; `DayColumn.tsx:38` e `TimedItem.tsx:38` em `memo` |
+| DP7 | `backdrop-filter` só onde o conteúdo rola | **implementado** | `App.tsx:200-211` — largura por corte, conteúdo em `transition-transform` |
+| DP8 | Métrica de aceite é número, não adjetivo | **proposto** | sem instrumentação alguma: `performance.mark`, `PerformanceObserver` e `web-vitals` não aparecem |
+| DP9 | `sideEffects: false` fica; split só com fronteira real | **parcial** | `package.json:5` ok; sem `manualChunks` nem `React.lazy`, e fonte continua vindo de `fonts.googleapis.com` (`index.html:10-14`) |
+| DP10 | Cache tem dono, forma e invalidação; não é `useMemo` | **implementado** | API em `calendar-store.ts:58-66`, singleton em `:171-190`, e **10 testes** em `data/calendar-store.test.ts` (eram zero) |
+| **DP11** | **O cache é ligado à tela, e a guarda de ordenação é por geração, não por boolean** | **implementado** | `01-performance-render.md` §3.2. Fecha o débito **C17** |
+
+### `02-transicoes-animacoes.md` — `DM1..DM12`
+
+| # | Decisão | Status | Evidência |
+|---|---|---|---|
+| DM1 | Motion em CSS puro e WAAPI; sem biblioteca | **implementado** | `package.json:32-52` sem `motion`/`framer-motion` |
+| DM2 | Escala fechada de duração, cinco degraus | **implementado** | `styles.css:70-74` |
+| DM3 | Curvas por tipo de movimento | **implementado** | `styles.css:83-89` |
+| DM4 | Só `transform` e `opacity` animam posição e tamanho | **implementado** | `transition-transform`, `transition-colors`; nada de `transition-[width/height/top/left]` |
+| DM5 | Política de FLIP em dois passos, WAAPI | **proposto** | sem `use-flip.ts`; `--ease-spatial` existe e **nenhum componente consome** |
+| DM6 | `prefers-reduced-motion` em três níveis | **implementado** | `styles.css:230-240` e `:457-468`. O hook `src/hooks/use-reduced-motion.ts:37-49` existe **sem consumidor** |
+| DM7 | O que nunca anima. Lista fechada | **implementado** | `CalendarScreen.tsx:467-468` (`nowTop` sem transição); `TimedItem.tsx:58-59` |
+| DM8 | O set curado não é editado à mão; só a folha decide | **parcial** | o override de `styles.css:99-100` existe, mas sobram literais: `tabs.tsx:30`, `progress.tsx:18`, `App.tsx:208` |
+| DM9 | `backdrop-filter` proibido dentro de container rolável | **implementado** | os três `sticky` usam `var(--surface-raised)`, opaco (`CalendarScreen.tsx:395,400,436`) |
+| DM10 | Nenhuma animação bloqueia ou atrasa o input | **proposto** | a troca de modo remonta a subárvore inteira (`CalendarScreen.tsx:326-351`) |
+| DM11 | Feedback de gravação é estado, não espetáculo | **proposto** | sem `saving`/`saved`; botões com `disabled` hardcoded (`:785-790`) |
+| DM12 | Conflito e sobreposição têm sinal estático | **proposto** | `hasConflict` existe no tipo (`data/bridge.ts:67`) e **nenhum componente o lê** |
+
+### `03-fluidez-interacao.md` — `DF1..DF14`
+
+| # | Decisão | Status | Evidência |
+|---|---|---|---|
+| DF1 | Arraste com Pointer Events manuais, sem lib | **proposto** | sem `onPointerDown`/`setPointerCapture` no `src/` |
+| DF2 | `getBoundingClientRect` do corpo da grade, uma vez | **proposto** | sem ocorrência |
+| DF3 | Encaixe de 15 min; `Alt` como escape | **parcial** | a geometria está pronta **e testada** (`grid-scale.ts:84,102,119-120`; `grid-scale.test.ts:110-152`), mas o escape `Alt` não tem consumidor |
+| DF4 | Durante o arraste o DOM muda direto | **proposto** | `TimedItem.tsx:38-67` é só `memo` + posicionamento |
+| DF5 | Teclado: aritmética de 15 min e modo de resize | **proposto** | os únicos `onKeyDown` são de tablist |
+| DF6 | Cancelamento: cinco rotas, um único `reset()` | **proposto** | sem `pointercancel`/`visibilitychange` |
+| DF7 | Limiar de 4 px e o `click` pós-`pointerup` engolido | **proposto** | o `onClick` de `TimedItem.tsx:50` dispara sempre |
+| DF8 | `GridItem` ganha `origin` e `allDay` (mudança Rust) | **proposto** | `bridge.ts:49-68` não tem os dois; o `SELECT` em `commands.rs:541-542` também não |
+| DF9 | O componente não escolhe o comando; sai de `kind` | **proposto** | `data/apply-gesture.ts` não existe; `moveOccurrence` não é chamada |
+| DF10 | Scroll: um container, `overscroll-behavior: contain` | **implementado** | `styles.css:305-312`, aplicado em `CalendarScreen.tsx:392` |
+| DF11 | Acessibilidade do arraste: `aria-live` com debounce | **proposto** | sem `aria-live`/`aria-grabbed` |
+| DF12 | `content-visibility: auto` nas colunas de dia | **implementado** | `styles.css:325-329`, aplicado em `DayColumn.tsx:58` |
+| DF13 | Feedback de falha: rollback + faixa inline | **proposto** | o erro de leitura é engolido em `catch {}` (`CalendarScreen.tsx:181-183`) |
+| DF14 | O que esta spec explicitamente **não** usa | **implementado** | sem `react-aria`, `react-window`, `@tanstack/*`, `dnd-kit` |
+
+### O que essa medição revela
+
+**O que foi implementado não é o que as specs esperavam.** As specs 02 e 03
+foram executadas como **fundação** — superfície, tokens, contenção, tablist — e
+não como **gesto**. Das 14 decisões de arrastre, nenhuma passou de "proposto",
+exceto `DF3`, cuja geometria está isolada em `grid-scale.ts` **e testada**, e
+`DF12`, entregue sem o arraste.
+
+O caso mais agudo é **`DP1`/`DP10`: `calendar-store.ts` é código morto, e a
+docstring dele afirma que o cache existe para remover um defeito.** Não há um
+único importador, não há um único teste, e a tela continua usando o `cancelled`
+que a docstring diz que "some junto com o cache"
+(`CalendarScreen.tsx:189-191` contra `calendar-store.ts:85`). Isto é o débito C10
+de novo, com outra roupa: **código morto com docstring que afirma servir.**
+O [`AGENTS.md`](../../../AGENTS.md) do grupo já lista "código morto (nem com
+teste vivo)" como algo que não se porta; aqui ele também não deveria ficar.
+
+O mesmo padrão, mais brando, vale para motion. **Atualizado em 2026-10-05.**
+Os tokens de `styles.css` continuam completos e corretos (`DM2`, `DM3`, `DM6`,
+`DM9` plenos), mas a afirmação anterior — "o vocabulário existe; a animação
+não" — era **meia verdade**, e a contagem é o que diz qual metade:
+
+```
+rg -c --glob '!src/styles.css' "motion-(state|spatial|item|cross-fade|surface|gesture)" src
+```
+
+| Utility | Consumidor | Medido em 2026-10-05 |
+|---|---|---|
+| `motion-state` | `src/shell/SidebarNav.tsx` (2), `src/components/ui/checkbox.tsx` (2) | tem |
+| `motion-spatial` | `src/shell/SidebarNav.tsx` (1) — o chevron do ramo | tem |
+| `motion-item` | — | **sem** |
+| `motion-cross-fade` | — | **sem** |
+| `motion-surface`, `motion-surface-closed`, `motion-gesture` | — | **sem** |
+
+Ou seja: `motion-state` e `motion-spatial` ganharam consumidor com a barra
+lateral compacta (`SPEC-D-006` D63), e continuam sem consumidor `motion-item`,
+`motion-cross-fade`, `motion-surface` e `motion-gesture`. `DM5` e `DM6` seguem
+"implementado" e "sem uso" ao mesmo tempo — e é exatamente o que a skill
+[`verificacao-por-contrato`](../../../.opencode/skill/verificacao-por-contrato/SKILL.md)
+chama de regra escrita e não conectada. A barra lateral adicionou ainda
+`motion-rail`, `motion-rail-icon` e `motion-rail-in`, que já nascem com
+consumidor; ver
+[`02-transicoes-animacoes.md`](02-transicoes-animacoes.md) §2.
+
+### Três incoerências internas que o código resolveu pelo lado certo
+
+| Onde | O que a spec diz | O que o código faz | Efeito |
+|---|---|---|---|
+| spec 02 `:752` (X19) | `--ease-spatial` = `0.27, 1.06, 0.18, 1.00` (overshoot) | `cubic-bezier(0.2, 0, 0, 1)`, monótono — `styles.css:88` | **corrige**: a linha contradiz o bloco normativo de `DM3` (`:246`) |
+| spec 02 `:224` e `:561` | `--duration-large` é para "densidade (D16)" | não existe controle de densidade; `hourHeight` é constante de módulo (`grid-scale.ts:36-37`) | **consumidor nomeado não existe** |
+| spec 03 `H-09` e spec 02 `:712` | `App.tsx:192-193` com `transition-[width] duration-200` | essa linha hoje é um comentário explicando a **remoção**; o custo foi para `transform` (`App.tsx:208`) | **resolvido**: `H-09` e a "Exceção 1" de `DM4` perderam o racional |
+
+Nenhuma delas é um bug do app. São três places onde a spec descreve um estado
+intermediário que o código passou. É o débito C12 em forma menor, e a correção
+é a data: **estas três linhas descrevem 2026-09-29.**
+
+`grid-scale.ts` e `hourHeight` **não** mudaram — `hourHeight: 56`,
+`dayStartHour: 6` e `visibleHeight` de 1008 px continuam, o que confirma as
+premissas de `S-07` e de `DF12`.
+
+### O que a Fase P0 violaria se fosse feita agora
+
+`P0` (baseline e instrumentação) é pré-requisito de `DP8`, e `DP8` é pré-requisito
+de `DP5`. **Nenhuma das três existe.** Ou seja: o caminho crítico declarado na
+tabela de ordem de implementação começa por uma fase que não rodou, e duas das
+decisões mais caras (`DP3`, `DP4`) não têm como ser avaliadas sem `P0`. Isso é
+um bloqueio de **sequência**, não de ambiente — e por isso é trabalho de roadmap,
+não de instalação.
 
 ---
 
@@ -63,7 +200,7 @@ P0  Baseline e instrumentação (nenhum comportamento muda)
 
 | #    | Achado                                                                                                                                                                                                     | Onde                                                                    | Specs                             |
 | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | --------------------------------- |
-| A-01 | Nenhum comando Tauri é `async` — 21 `#[tauri::command]` rodam na thread principal                                                                                                                          | `src-tauri/src/commands.rs` (21 ocorrências, `rg 'async fn'` → vazio)   | 01 §1, 03 §1.7                    |
+| A-01 | Nenhum comando Tauri é `async` — 20 `#[tauri::command]` rodam na thread principal                                                                                                                          | `src-tauri/src/commands.rs` (20 comandos; `rg 'async fn'` → vazio)   | 01 §1, 03 §1.7                    |
 | A-02 | `formatClock` constrói um `Intl.DateTimeFormat` por item, por render                                                                                                                                       | `CalendarScreen.tsx:90-96`, chamada em `:452` e `:465`                  | 01 (P2)                           |
 | A-03 | `placeInDay` custa ~8 `Intl.formatToParts` por item                                                                                                                                                        | `domain/time.ts:117`; `CalendarScreen.tsx:444`; `grid-scale.ts:130-138` | 01 (P2)                           |
 | A-04 | O relógio de 60 s re-renderiza a tela inteira e impede qualquer `memo`                                                                                                                                     | `CalendarScreen.tsx:120-123` → `:306,309,315,323,329`                   | 01 (P3/DP3), 02 (M3)              |

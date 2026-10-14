@@ -1,7 +1,8 @@
-# Campus
+# cecistudy ♡
 
 App desktop de organização acadêmica: aulas, entregas, provas e notas em uma
-interface densa e rápida de operar.
+interface densa e rápida de operar. A mesma marca do mobile (`ADR-011`); o
+backend de domínio é Rust (`ADR-006`).
 
 ## Stack
 
