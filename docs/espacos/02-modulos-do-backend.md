@@ -355,6 +355,27 @@ mesma mecânica num bloco três vezes menor. O contrário — começar por Estud
 378 linhas — treina o movimento num bloco pequeno e deixa o maior para o fim, com
 o gate já maduro e o histórico de três fatias para consultar.
 
+### O inventário confere item a item
+
+A migração moveu endereço, não conteúdo. Comparado com `70a12d3`, o último
+commit antes de F0:
+
+| | `commands.rs` (antes) | os quatro `comandos.rs` (depois) |
+|---|---|---|
+| `pub fn` | 95 | 95 |
+| `fn` privado | 42 | 40 |
+| `pub struct` | 68 | 68 |
+| `#[test]` | 62 | 62 |
+
+Os **dois** `fn` privados que saíram são `new_id` e `now_ms`, que foram para
+`nucleo/db.rs` e viraram `pub` — porque `nucleo/` é um diretório sem dono de
+tabela, e lá não há por que esconder. Nenhuma outra função sumiu, nenhuma mudou
+de visibilidade e nenhum struct mudou de forma.
+
+A verificação mais forte é o **diff de literais SQL**: 65 antes, 65 depois, diff
+vazio. Um `git diff` que só move linhas não produz diferença na lista — e é por
+isso que o critério é o SQL e não "os testes passam".
+
 ## Medição
 
 Números gerados, não copiados. Todos de **2026-10-14**.
