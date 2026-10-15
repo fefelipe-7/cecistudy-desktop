@@ -10,27 +10,45 @@ frontend juntos, para que uma regra só exista quando houver chamador em produç
 > Origem: [`../spec-referencial-workspace-academico.md`](../spec-referencial-workspace-academico.md)
 > §2 (line 31-54, os nove módulos) e o roadmap do grupo, fases F7 e F8.
 
-## Estado verificado em 2026-10-13
+## Estado verificado em 2026-10-15
 
-Números gerados, não copiados. A fonte é o comando.
+Números gerados, não copiados. A fonte é o comando. **Regerado depois da
+SPEC-D-015** (PR #1), que trocou `commands.rs` por quatro diretórios de módulo e
+levou o gate de 8 para 10 regras.
 
 | Medida | Comando | Resultado |
 |---|---|---|
 | Testes TS | `npm run test` | **279 pass, 0 fail** |
 | Golden | `npm run test:golden` | **6 pass, 0 fail** |
-| Fronteiras | `npm run check:boundaries` | **69 arquivos, 30 tabelas, 8 regras** |
-| Testes Rust | `cd src-tauri; cargo test --lib --no-default-features` | **134 pass, 0 fail** (+1 `#[ignore]`: gerador do golden de FSRS; exige MinGW com `libgcc_eh`; ver D0.1) |
-| Comandos IPC | `Select-String -Path src-tauri\src\lib.rs -Pattern "commands::" -Encoding UTF8 \| Measure-Object` | **48** (20 do Calendário + 11 da Faculdade + 4 dos Estudos + **13** do TCC) |
-| Gate completo | `npm run verify` | **EXIT 0** (2026-10-13, com o PATH reordenado — D0.1) |
-| Repositório | `git log --oneline` | **4 commits** (2026-09-28), branch `master` |
+| Fronteiras | `npm run check:boundaries` | **69 arquivos, 30 tabelas, 10 regras** (as 8 de arquitetura, mais a 9ª de registro e a 10ª de teto) |
+| Verificação negativa | `npm run test:gate` | **6 violações injetadas, 6 acusadas** |
+| Testes Rust | `cd src-tauri; cargo test --lib --no-default-features` | **160 pass, 0 fail** (+1 `#[ignore]`: gerador do golden de FSRS; ver D0.1) |
+| Comandos IPC | `Select-String -Path src-tauri\src\lib.rs -Pattern "comandos::" -Encoding UTF8 \| Measure-Object` | **48** (20 do Calendário + 11 da Faculdade + 4 dos Estudos + **13** do TCC) |
+| Gate completo | `npm run verify` | **EXIT 0** (2026-10-15, local e CI) |
+| Repositório | `git log --oneline origin/main \| wc -l` | **17 commits** em `main`; o trabalho de `SPEC-D-015` está em `refactor/modulos-rust` (PR #1) |
 
-**Backend hoje:** `domain.rs` (`TRANSITIONS`, `transition_allowed`, `is_overdue`,
-`mark_overlaps`, `can_generate_delay`), `commands.rs` (48 comandos — 20 do
-Calendário + 11 do Faculdade + 4 do Estudos + 13 do TCC, regra imposta na escrita
-e na leitura, recorrência pelo crate `rrule` RFC 5545), `db.rs` (5 migrações, 30
-tabelas: 12 do Calendário + 7 do Faculdade + 3 do Estudos + 8 do TCC). C5 e C6
-fechados; INV-1..7 implementadas. Falta a camada `sync/` (ADR-009 item 3) e há
-três tabelas sem comando: `external_link`, `suggestion`, `sync_cursor`.
+**Backend hoje:** `src-tauri/src/` é `nucleo/` (`Db`, `DbError`, `new_id`,
+`now_ms` — sem dono de tabela) mais quatro diretórios de módulo, **um por dono
+de dado**, e o caminho de escrita mora dentro do dono (`SPEC-D-015`, `D96..D100`):
+
+```text
+nucleo/       db.rs                      5 migrações, 30 tabelas
+calendario/   dominio.rs · comandos.rs · testes.rs
+faculdade/    media.rs · regra.rs · comandos.rs · testes.rs
+estudos/      fsrs.rs · comandos.rs · testes.rs
+tcc/          documento · docx · item · medidor · paginacao · pdf · versao
+              comandos.rs · testes.rs
+```
+
+Os 48 comandos IPC estão registrados em `lib.rs` **com o caminho do dono**
+(`calendario::comandos::list_events_in_window`), o que faz da lista de registro
+uma leitura da fronteira. C5 e C6 fechados; INV-1..7 implementadas; `D95`
+declarada (composição única, três saídas). Falta a camada `sync/` (ADR-009 item
+3) e há três tabelas sem comando: `external_link`, `suggestion`, `sync_cursor`.
+
+`commands.rs` — 6537 linhas, 53% do crate e caminho de escrita de quatro donos —
+**não existe mais**. O maior arquivo do crate é `calendario/comandos.rs`, com
+1827 linhas, e o teto de `D100` o mantém abaixo de 2000.
 
 **Frontend hoje:** o **shell** dos nove módulos do §2 existe desde D2 (2026-10-09):
 [`src/shell/navigation.ts`](./src/shell/navigation.ts) é a tabela declarativa
@@ -53,7 +71,7 @@ declarados, clicáveis, com estado honesto "em construção". A regra vive em
 | [`AGENTS.md:5`](./AGENTS.md) | "keep the study workspace as a single stateful dashboard route" | **corrigido em D2** (2026-10-09): o item agora descreve o shell e a tabela de navegação |
 | [`docs/calendario/00-fundacao.md`](./docs/calendario/00-fundacao.md) | `App.tsx` "com 1137 linhas com todos os componentes" | hoje vale `src/shell/SidebarNav` + `features/calendar/ui/CalendarScreen` |
 | [`roadmap.md`](./roadmap.md) (este, antes) | contagens de teste antigas e "instalar o compilador da Microsoft" | toolchain é `windows-gnu` + MinGW-w64 (D83); contagens, no quadro "Estado verificado" acima |
-| [`AGENTS.md`](../AGENTS.md) da raiz | "quatro arquivos" e "o Rust cumpre só a persistência" | arquivos do Calendário + módulo `materia/`; o domínio já é imposto |
+| [`AGENTS.md`](../AGENTS.md) da raiz | "quatro arquivos" e "o Rust cumpre só a persistência" | **drift do hub:** ainda descreve o estado anterior à SPEC-D-015. O hub não é corrigido daqui — ver [`docs/todo/TO-DO-DESKTOP.md`](./docs/todo/TO-DO-DESKTOP.md) |
 | [`AGENTS.md`](./AGENTS.md) §Gate | contagens literais defasadas | **corrigido em 2026-10-13 (D0.5):** a tabela agora diz **como medir**, sem número |
 
 ## D0 — Destravar a máquina e o repositório
@@ -100,7 +118,7 @@ O que fechou, por item:
 |---|---|---|---|---|
 | D1.1 | front | Ligar `complete_item`/`record_execution` na tela; concluir grava o registro | INV-3, [`SPEC-D-001`](../docs/specs/desktop/SPEC-D-001-estado-e-sobreposicao-no-caminho-de-escrita.md) | teste prova que concluir cria `execution_record` |
 | D1.2 | front | Remover `state-machine.ts` e `overdue.ts` do caminho de produção; consumir `GridItem`/`Responsibility` derivados do backend | F7.4 | `rg "state-machine\|overdue" src/features/calendar/ui` retorna vazio |
-| D1.3 | back | Expor no read-model os destinos válidos (`destinations_of` já existe em `domain.rs`) para a UI decidir botões sem reimplementar regra | F7.4, SPEC-D-001 | golden de transições cobre o payload |
+| D1.3 | back | Expor no read-model os destinos válidos (`destinations_of` já existe em `calendario/dominio.rs`) para a UI decidir botões sem reimplementar regra | F7.4, SPEC-D-001 | golden de transições cobre o payload |
 | D1.4 | gate | Nova regra no `check-boundaries`: nenhum arquivo de `domain/` importado por `ui/` ou `data/` | F7.6 | gate falha se `domain/` for importado pela tela |
 | D1.5 | doc | Decidir, arquivo a arquivo, o destino dos quatro espelhos | F7.2 | decisão registrada como `D<n>` com alternativa rejeitada |
 
@@ -171,18 +189,22 @@ dependência e por desbloqueio.
 **Gate:** cada módulo entregue tem comando Rust com chamador, UI ligada por IPC, e
 as `[A]`/`[P]` acima continuam abertas (agente não fecha `[A]`).
 
-**D4.1 — estado (2026-10-09, F8 fechado).** Faculdade: motor e regra em
-`src-tauri/src/materia/` (18 testes), schema em `migrations/0003_faculdade.sql`
+**D4.1 — estado (2026-10-09, F8 fechado; caminhos atualizados em 2026-10-15 pela
+SPEC-D-015).** Faculdade: motor e regra em `src-tauri/src/faculdade/` (o
+diretório chamava `materia/` e foi renomeado, porque o **nome do diretório é o
+id do dono** e o id já era `faculdade` em `DONO_DA_TABELA`, em `navigation.ts` e
+na migration), 18 testes, schema em `migrations/0003_faculdade.sql`
 (7 tabelas), onze comandos IPC com a guarda I7 no caminho de escrita e a ponte
-`src/features/faculdade/data/bridge.ts` — 6 testes de caminho em `commands.rs`,
-o golden de média fechado (`golden/media.jsonl`, 10 casos, lido por teste em
-`materia/media.rs`) e a tela v1 (`FaculdadeScreen`: semestres, disciplinas com
-média derivada, avaliações, nota, encerramento). Estudos: backend e tela v1 —
-crate `fsrs 6.6.2` (BSD-3-Clause) registrada no `Cargo.toml`, motor e cláusula
-do vencimento em `src-tauri/src/estudos/fsrs.rs`, schema em
-`migrations/0004_estudos.sql` (`conteudo`, `cartao`, `revisao`), golden
-`golden/fsrs.jsonl` (8 casos), quatro comandos IPC (4 testes de caminho), a
-ponte `src/features/estudos/data/bridge.ts` e a `EstudosScreen` (fila do dia +
+`src/features/faculdade/data/bridge.ts` — 6 testes de caminho em
+`faculdade/testes.rs`, o golden de média fechado (`golden/media.jsonl`, 10
+casos, lido por teste em `faculdade/media.rs`) e a tela v1 (`FaculdadeScreen`:
+semestres, disciplinas com média derivada, avaliações, nota, encerramento).
+Estudos: backend e tela v1 — crate `fsrs 6.6.2` (BSD-3-Clause) registrada no
+`Cargo.toml`, motor e cláusula do vencimento em `src-tauri/src/estudos/fsrs.rs`,
+schema em `migrations/0004_estudos.sql` (`conteudo`, `cartao`, `revisao`), golden
+`golden/fsrs.jsonl` (8 casos), quatro comandos IPC (4 testes de caminho em
+`estudos/testes.rs`), a ponte `src/features/estudos/data/bridge.ts` e a
+`EstudosScreen` (fila do dia +
 revisão, com seletor de retenção — **0,9 provisório, padrão [P]**, decisão
 relatada pela dona em 2026-10-09). Fora da v1: as quatro telas de §4.4, trilhas
 e o modo preparação de prova (**[P]**).
@@ -205,8 +227,10 @@ nós em lista de adjacência ordenada, `D86` paginação pura com medidor injeta
 
 A **v1 vertical** (Rust → bridge → UI) saiu: `migrations/0005_tcc.sql` (8 tabelas
 + índices), motor puro em `src-tauri/src/tcc/` (documento, medidor, paginação,
-versão, item — 28 testes), **9 comandos IPC** com a guarda de escrita, ponte
-`src/features/tcc/data/bridge.ts`, `view.ts`/`view.test.ts` e a `TccScreen`
+versão, item — 28 testes), **13 comandos IPC** com a guarda de escrita — a v1
+tinha 9; os outros 4 (`get_documento_do_projeto`, `paginar_documento`,
+`list_base`, `vincular`/`desvincular` da Base de pesquisa) entraram depois —,
+ponte `src/features/tcc/data/bridge.ts`, `view.ts`/`view.test.ts` e a `TccScreen`
 (projetos, painel do documento com árvore, versão, itens a resolver). O
 `get_documento_do_projeto` foi adicionado para a tela abrir o documento do projeto
 sem copiar o id. **Fora da v1:** o editor paginado de fato e o round-trip DOCX,

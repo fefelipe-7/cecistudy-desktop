@@ -23,6 +23,7 @@
     "verify:rust:shell": "cd src-tauri && cargo check --all-targets",
     "verify:rust": "npm run verify:rust:domain && npm run verify:rust:clippy && npm run verify:rust:fmt && npm run verify:rust:shell",
     "verify": "npm run typecheck && npm run lint && npm run test && npm run test:golden && npm run check:boundaries && npm run test:gate && npm run verify:rust",
+    "verify:fast": "npm run typecheck && npm run lint && npm run test && npm run test:golden && npm run check:boundaries",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
