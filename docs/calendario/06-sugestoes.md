@@ -1,6 +1,13 @@
 # Spec 06 — Sugestões de blocos recomendados pela Ceci
 
 Data: 2026-09-28
+
+> **Citações de código desta pasta apontam para caminhos que não existem mais.**
+> `commands.rs`, `db.rs` e `domain.rs` viraram diretórios por dono de dado em
+> 2026-10-15 (`SPEC-D-015`, `D96..D100`). A tabela de correspondência e o que
+> continua valendo estão em
+> [`00-onde-estas-citacoes-apontam.md`](./00-onde-estas-citacoes-apontam.md).
+
 Escopo: transformar a entrega 10 de `calendario.md` §11 em comportamento: a Ceci sugere blocos de tempo para responsabilidades que precisam de tempo, e a usuária aceita, ajusta ou recusa **sempre** por ação explícita.
 Status: proposta fechada, aguardando implementação.
 

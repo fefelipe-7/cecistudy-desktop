@@ -4,7 +4,7 @@
 > [`SPEC-D-011`](../../../docs/specs/desktop/SPEC-D-011-editor-do-tcc-e-round-trip-docx.md).
 > A cópia de grupo vive em
 > `docs/specs/desktop/SPEC-D-011-editor-do-tcc-e-round-trip-docx.md`.
-> Decisões do app: `D77`, `D78`, `D79`.
+> Decisões do app: `D77`, `D78`, `D79`, `D95`.
 > Origem: spec referencial §1.3 (**[D]**, cada dado tem um dono), §1.4 (**[D]**,
 > o cálculo e o dado são Rust), §1.7 (**[D]**, a Ceci lê e sugere, nunca escreve),
 > §3.1 (TCC & Projetos é dono de Projeto, Base de pesquisa, Documento, árvore
@@ -72,8 +72,10 @@ este documento **declara em aberto** — ver D77.
   que só guarda o texto não é paginável, e um editor que grava posições de página
   deixa de ser editável — o primeiro caractere digitado invalida tudo. O projeto
   já resolveu isso três vezes, com a mesma técnica: o schema **não tem** coluna de
-  atraso (`commands.rs:22-23`), o `calendar_event` **não** tem `responsibility_id`
-  (`commands.rs:19-20`) e a geometria da grade do Calendário é centralizada em um
+  atraso (INV-4, em [`calendario/comandos.rs`](../../src-tauri/src/calendario/comandos.rs),
+  que nunca compara `due_at` com o relógio), o `calendar_event` **não** tem
+  `responsibility_id` (INV-1, e o `UpsertBlock` exige o campo, então é o compilador
+  que impede a ausência) e a geometria da grade do Calendário é centralizada em um
   módulo puro com teste (`domain/grid-scale.ts`). A geometria **parâmetro** é a
   mesma disciplina, e ela é o que torna §4.7 "modelo da instituição **[P]**"
   possível sem um segundo motor.
@@ -281,6 +283,47 @@ de entrar em código. Cada linha vale como caso do golden do round-trip.
   marca), não uma coluna nova; a citação é sempre gerada a partir do vínculo, e a
   lacuna é sinalizada na lista e no item (§4.5 **[P]**).
 
+## D95 · Uma composição de linhas, três saídas
+
+> **Esta decisão foi escrita em 2026-10-15, e não antes.** O código a citava
+> desde a implementação do round-trip, em cinco lugares
+> (`tcc/mod.rs:14,18,19,26`, `tcc/docx.rs:1`, `tcc/paginacao.rs:14,86`,
+> `tcc/pdf.rs:1`), e ela não existia em nenhum bloco de decisão. Decisão
+> numerada sem registro é pior que ausência: o código aponta para um
+> argumento que ninguém pode ler. **O texto abaixo foi remontado das citações
+> e do que o código faz** — se a leitura não for a que a dona do produto
+> tinha em mente, é aqui que se corrige.
+
+- **Decisão.** Existe **uma** composição de linhas do documento, e três
+  consumidores dela: o editor paginado, a escrita do DOCX e o render do PDF.
+  Nenhum dos três reconstrói a sequência de texto por conta própria — todos leem
+  [`Composicao`](../../src-tauri/src/tcc/paginacao.rs) / [`LinhaComposta`](../../src-tauri/src/tcc/paginacao.rs).
+  E, por consequência: a **leitura** de `w:ins`/`w:del` é nossa, porque o que
+  alimenta a composição é um item a resolver com autor e data
+  ([`item_a_resolver`](../../src-tauri/migrations/0005_tcc.sql)), e não texto
+  solto.
+- **Justificativa.** São três renderizadores do mesmo documento. Cada um com a
+  sua leitura do modelo é três chances de o mesmo documento sair diferente
+ > para um dos dois. Cada um com a leitura do modelo é três chances de o mesmo
+> documento sair diferente dependendo do destino — e o usuário não sabe qual
+> dos três ele vai receber até receber. A composição é o ponto onde essa
+> divergência é impedida de nascer, e `I3` é a prova: DOCX e PDF têm a mesma
+> sequência de texto (`tcc::docx::test::i3_docx_e_pdf_tem_a_mesma_sequencia_de_texto`,
+> `docx.rs:918`).
+- **Alternativa rejeitada.** (a) **Cada renderizador lê o modelo.** É o padrão
+  imediato, e é o que produz "no PDF ficou com outra quebra de página" sem que
+  ninguém consiga dizer onde. (b) **Uma biblioteca DOCX que também pagina.**
+  Resolve I3 trocando a garantia por conveniência: quem pagina passa a ser a
+  biblioteca, e `D86` exige que o número de páginas venha com o medidor
+  declarado. (c) **Só o PDF sai da composição.** Seria o meio-termo mais
+  barato, e é o que produz `I3` quebrada: dois caminhos para a mesma sequência.
+- **Consequência aceita.** `paginar` e `compor` são funções distintas no mesmo
+  módulo, e o render do PDF e a escrita do DOCX passam a depender das duas. Em
+  troca, a paridade entre as três saídas é verificável por teste de sequência,
+  e a geometria é **parâmetro** de `D86` — mudar a geometria reprocessa o
+  documento sem tocar na árvore. O custo é que `docx` e `pdf` não são módulos
+  independentes: mudar a composição muda os dois.
+
 ## Invariantes
 
 As quinze de `SPEC-D-011` §6, com o estado no app. Estado medido em 2026-10-13
@@ -291,7 +334,7 @@ garantida e cada linha diz **como medir**.
 |---|---|---|---|
 | I1 | Nenhuma coluna de página, altura de bloco ou posição de cursor | `src-tauri/migrations/0005_tcc.sql` | **cumprida** — `rg -n "pagina\|altura_bloco\|cursor" src-tauri/migrations/` só acha um comentário e a tabela `sync_cursor`, que é da sincronização, não do documento |
 | I2 | A página é derivada, e o modelo não depende da geometria | `src-tauri/src/tcc/paginacao.rs` + `paginar_documento` | **cumprida** — testes `mudar_a_geometria_nao_altera_o_conteudo` e `tcc_paginar_muda_a_geometria_sem_mudar_o_conteudo`; o comando grava nada |
-| I3 | DOCX e PDF saem do mesmo modelo interno | exportação (a criar) | **pendente** — teste de paridade da sequência de texto |
+| I3 | DOCX e PDF saem do mesmo modelo interno | `src-tauri/src/tcc/paginacao.rs` (`compor`) + `docx.rs` + `pdf.rs` | **cumprida** — teste `i3_docx_e_pdf_tem_a_mesma_sequencia_de_texto` (`docx.rs:918`), que compara a sequência de texto dos dois pacotes contra a do modelo |
 | I4 | A importação não altera o conteúdo do documento | `src-tauri/src/tcc/docx.rs` (a criar) | **pendente** — teste de merge: texto idêntico antes e depois |
 | I5 | A âncora é o texto citado e sobrevive à edição no Word | `docx.rs` | **pendente** — teste: editar antes do comentário e reimportar |
 | I6 | A importação reporta o que não encaixou, com contagem | relatório de importação | **pendente** — teste: trecho inexistente é reportado |

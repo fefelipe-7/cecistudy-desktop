@@ -1,9 +1,28 @@
 /**
  * Gate de fronteiras do desktop.
  *
- * Oito regras arquiteturais que estão em prosa no `AGENTS.md` viram código
+ * Dez regras arquiteturais que estão em prosa no `AGENTS.md` viram código
  * executável. Sem isto, "domain/ nunca importa ui/" é opinião, e opinião não
  * falha em review.
+ *
+ * Sete regras cuidam do TypeScript. A oitava é o dono de dado no backend Rust
+ * (SPEC-D-007 D67) e a nona e a décima são a modularidade do crate
+ * (SPEC-D-015, D96..D100).
+ *
+ * A regra 8 percorre `src-tauri/src` recursivamente e tira o dono de cada
+ * escrita do **nome do diretório**. Antes ela lia `src-tauri/src/commands.rs`
+ * por nome, e isso significava que dividir aquele arquivo — que era justamente
+ * o que D96 mandava fazer — deixava a regra sem ver escrita nenhuma e ainda
+ * verde. Verificado em 2026-10-14: o gate acusava a violação antes do split e
+ * dava `✓` depois.
+ *
+ * A dívida que existiu entre F0 e F4 — o caminho de escrita morando na raiz do
+ * crate — morava em `EXCECOES_NA_RAIZ`, nomeada e impressa em cada execução. O
+ * arquivo sumiu em F5, e a exceção foi com ele: a regra fica mais dura do que o
+ * estado que ela mede.
+ *
+ * A verificação negativa é `npm run test:gate`: sem ela, "o gate está verde"
+ * não distingue "está certo" de "não viu nada".
  *
  * Sem dependência: só `node:*`. Roda em segundos e não precisa de `npm install`.
  *
@@ -350,8 +369,57 @@ const DONO_DA_TABELA = {
   setting: "local",
 };
 
-const ARQUIVO_RUST = "src-tauri/src/commands.rs";
-const COMANDOS_RS = join(RAIZ, ARQUIVO_RUST);
+// ---------------------------------------------------------------------------
+// O lado Rust: dono de dado, registro e teto (SPEC-D-007 D67, SPEC-D-015)
+// ---------------------------------------------------------------------------
+
+/** Base do crate Rust. A regra 8, a 9 e a 10 leem daqui. */
+const SRC_RUST = join(RAIZ, "src-tauri", "src");
+
+/** O próprio gate: a causa de 8a é o mapa dele, não um arquivo do app. */
+const ESTE_GATE = join(RAIZ, "scripts", "check-boundaries.mjs");
+
+/**
+ * Diretórios de módulo Rust, e o nome do diretório **é** o id do dono (D97,
+ * I1). Um diretório fora desta lista é violação: é a mesma disciplina de D65,
+ * onde tabela sem classificação é falha de aceite. Sem isso, um módulo novo
+ * nasce invisível.
+ */
+const DONOS_RUST = new Set(["calendario", "faculdade", "estudos", "tcc"]);
+
+/**
+ * Diretório sem dono de dado: a infraestrutura que os quatro módulos
+ * compartilham — `Db`, `DbError`, `new_id`, `now_ms` (D96).
+ */
+const SEM_DONO_RUST = new Set(["nucleo"]);
+
+/**
+ * Teto de linhas de `<módulo>/comandos.rs` (D100, I5).
+ */
+const TETO_DE_COMANDOS = 2000;
+
+/** Todos os `.rs` de `src-tauri/src/`. */
+function arquivosRust() {
+  const saida = [];
+  const anda = (dir) => {
+    for (const entrada of readdirSync(dir, { withFileTypes: true })) {
+      const completo = join(dir, entrada.name);
+      if (entrada.isDirectory()) anda(completo);
+      else if (entrada.name.endsWith(".rs")) saida.push(completo);
+    }
+  };
+  anda(SRC_RUST);
+  return saida;
+}
+
+/**
+ * O dono de um arquivo Rust: a primeira parte do caminho, quando for diretório
+ * de módulo. `null` = sem dono — é o caso da raiz do crate e de `nucleo/`.
+ */
+function donoDoArquivoRust(rel) {
+  const pasta = /^src-tauri\/src\/([^/]+)\//.exec(rel)?.[1];
+  return DONOS_RUST.has(pasta) ? pasta : null;
+}
 
 /** Remove comentários de linha, exceto quando o `//` está dentro de string. */
 function semComentariosDeLinha(fonte) {
@@ -366,17 +434,33 @@ function semComentariosDeLinha(fonte) {
 }
 
 /**
- * As escritas (INSERT/UPDATE/DELETE) de cada `pub fn`, como
- * `Map<função, Set<dono>>`. O módulo de teste é cortado antes: teste escreve
- * para provar regra, não dado da usuária. O corte é no `#[cfg(test)] mod` —
- * **não** no primeiro `#[cfg(test)]`, porque este também marca helpers que só
- * o teste usa, no meio do arquivo, e cortar ali deixaria quase todo o backend
- * fora do gate (medido em F8b2: o gate "verde" que não via escrita nenhuma).
+ * O corpo de produção de um arquivo: sem o `#[cfg(test)] mod`.
+ *
+ * O corte é no `mod`, **nunca** no primeiro `#[cfg(test)]`, porque esse também
+ * marca helpers que só o teste usa no meio do arquivo, e cortar ali deixaria
+ * quase todo o backend fora do gate (medido em F8b2: o gate "verde" que não via
+ * escrita nenhuma). Com D99 os testes vão para `<módulo>/testes.rs`, e o corte
+ * passa a ser redundante por construção — mas ele continua, porque `db.rs` tem
+ * teste no mesmo arquivo.
  */
-function escritasPorFuncao(fonte) {
+function corpoDeProducao(fonte) {
   const corte = fonte.search(/^#\[cfg\(test\)\]\s*\r?\nmod\s+\w+\s*\{/m);
-  const corpo = semComentariosDeLinha(corte === -1 ? fonte : fonte.slice(0, corte));
-  const limites = [...corpo.matchAll(/^pub fn (\w+)[(< ]/gm)].map((m) => ({
+  return semComentariosDeLinha(corte === -1 ? fonte : fonte.slice(0, corte));
+}
+
+/**
+ * As escritas (INSERT/UPDATE/DELETE) de cada `fn` de UM arquivo, como
+ * `Map<comando, Set<dono da tabela>>`.
+ *
+ * **Todo `fn` conta, público ou privado.** O privado continua sendo caminho de
+ * escrita: a casca `pub` do mesmo módulo o chama, então ele é alcançável de
+ * fora do crate. Já existe um assim — `upsert_recurrence_core` é privado entre
+ * 47 públicos. Se o gate ignorasse `fn` privado, o verde falso de D98 voltaria
+ * pela porta dos fundos.
+ */
+function escritasPorFuncaoDoArquivo(fonte) {
+  const corpo = corpoDeProducao(fonte);
+  const limites = [...corpo.matchAll(/^(?:pub\s+)?fn\s+(\w+)[(< ]/gm)].map((m) => ({
     nome: m[1],
     indice: m.index,
   }));
@@ -390,9 +474,9 @@ function escritasPorFuncao(fonte) {
     }
     if (limite === null) continue;
     const dono = DONO_DA_TABELA[m[1].toLowerCase()];
-    if (dono === undefined) continue; // tabela sem dono é falha da regra, abaixo
-    // O comando tauri é a casca `X`; a escrita mora em `X_core`. Sem normalizar
-    // o sufixo, `donos.get("X_core")` é `undefined` e o cruzamento de D67 fica
+    if (dono === undefined) continue; // tabela sem dono é falha da regra, 8a
+    // A casca tauri é `X`; a escrita mora em `X_core`. Sem normalizar o
+    // sufixo, `donos.get("X_core")` é `undefined` e o cruzamento de D67 fica
     // cego — foi o defeito medido em F8b2. O nome que a bridge invoca é `X`.
     const comando = limite.nome.endsWith("_core")
       ? limite.nome.slice(0, -"_core".length)
@@ -424,6 +508,53 @@ function donosPorComando() {
   return donos;
 }
 
+/** Núcleos (`X_core`) e cascas (`#[tauri::command] fn X`) do crate inteiro. */
+function funcoesDeIpc() {
+  const nucleos = new Map();
+  const cascas = new Map();
+  for (const caminho of arquivosRust()) {
+    const rel = relative(RAIZ, caminho).split(sep).join("/");
+    const corpo = corpoDeProducao(readFileSync(caminho, "utf8"));
+    for (const m of corpo.matchAll(/^(?:pub\s+)?fn\s+(\w+_core)\b/gm)) {
+      nucleos.set(m[1].slice(0, -"_core".length), rel);
+    }
+    // O atributo vem em duas linhas: `cfg_attr(feature, tauri::command)` e
+    // `cfg(feature)`, e pode haver outros `#[...]` entre o atributo e a `fn`.
+    for (const m of corpo.matchAll(
+      /tauri::command\)\]\s*\r?\n(?:#\[[^\]]*\]\s*\r?\n)*(?:pub\s+)?fn\s+(\w+)\s*\(/g,
+    )) {
+      cascas.set(m[1], rel);
+    }
+  }
+  return { nucleos, cascas };
+}
+
+/**
+ * Os comandos registrados em `lib.rs`, com a linha, para acusar duplicata.
+ *
+ * Aceita o caminho completo do módulo (`calendario::comandos::migrate`) e
+ * guarda só o último segmento, que é o nome que o `invoke` usa. O caminho
+ * importa para a leitura de quem abre o arquivo; para o cruzamento, o que
+ * identifica o comando é o nome.
+ */
+function comandosRegistrados() {
+  const lib = readFileSync(join(SRC_RUST, "lib.rs"), "utf8");
+  const registrados = new Map();
+  const linhas = lib.split(/\r?\n/);
+  for (let i = 0; i < linhas.length; i++) {
+    // Só a forma `mod::…::comando`, que é como `generate_handler!` lista.
+    const m = /^\s*(?:\w+::)+\w+,?\s*$/.exec(linhas[i]);
+    if (!m) continue;
+    const nome = m[0].trim().replace(/,$/, "").split("::").pop();
+    if (!registrados.has(nome)) registrados.set(nome, []);
+    registrados.get(nome).push(i + 1);
+  }
+  return registrados;
+}
+
+/** Dívida da raiz (D98): arquivo da raiz do crate → módulos que escrevem dali. */
+const dividaNaRaiz = new Map();
+
 {
   // 8a — tabela sem dono classificado, e mapa sem tabela: a checagem nas duas
   // direções é o que impede o mapa de envelhecer em silêncio (D65: a ausência
@@ -431,7 +562,7 @@ function donosPorComando() {
   for (const tabela of tabelas) {
     if (!(tabela in DONO_DA_TABELA)) {
       falha(
-        COMANDOS_RS,
+        ESTE_GATE,
         1,
         "dono-de-dado",
         `a tabela \`${tabela}\` não tem dono no mapa do gate. Classifique-a na ` +
@@ -443,7 +574,7 @@ function donosPorComando() {
   for (const tabela of Object.keys(DONO_DA_TABELA)) {
     if (!tabelas.has(tabela)) {
       falha(
-        COMANDOS_RS,
+        ESTE_GATE,
         1,
         "dono-de-dado",
         `o mapa do gate diz que \`${tabela}\` é de \`${DONO_DA_TABELA[tabela]}\`, ` +
@@ -452,15 +583,108 @@ function donosPorComando() {
     }
   }
 
-  // 8b — o cruzamento de D67: módulo da bridge × tabelas escritas.
-  const escritas = escritasPorFuncao(readFileSync(COMANDOS_RS, "utf8"));
   const donos = donosPorComando();
 
+  for (const caminho of arquivosRust()) {
+    const rel = relative(RAIZ, caminho).split(sep).join("/");
+    const pasta = /^src-tauri\/src\/([^/]+)\//.exec(rel)?.[1];
+    const donoDoArquivo = donoDoArquivoRust(rel);
+
+    // Diretório de módulo sem dono declarado: o módulo novo nasce invisível.
+    if (pasta !== undefined && !DONOS_RUST.has(pasta) && !SEM_DONO_RUST.has(pasta)) {
+      falha(
+        caminho,
+        1,
+        "dono-de-dado",
+        `\`${pasta}/\` não é um módulo dono declarado. Acrescente-o a DONOS_RUST ` +
+          `(\`${pasta}\`) ou a SEM_DONO_RUST, e a tabela dele a DONO_DA_TABELA ` +
+          `(docs/espacos/01-fronteiras.md).`,
+      );
+      continue;
+    }
+
+    // **Todo arquivo que escreve mora num diretório de módulo**, e o nome do
+    // diretório é o id do dono (D96, I1). Não há exceção: um arquivo de escrita
+    // na raiz do crate é violação, e é assim desde F5.
+    //
+    // A dívida que existiu entre F0 e F4 morava em `EXCECOES_NA_RAIZ`, uma lista
+    // nomeada e impressa em toda execução. Ela foi removida junto com o arquivo
+    // que a justificava — `commands.rs` não existe mais, e a regra precisa ficar
+    // mais dura do que o estado que ela mede.
+    if (pasta === undefined) {
+      const nome = rel.slice("src-tauri/src/".length);
+      const escreve = escritasPorFuncaoDoArquivo(readFileSync(caminho, "utf8"));
+      const tabelasDeModulo = new Set();
+      for (const donosEscritos of escreve.values()) {
+        for (const d of donosEscritos) if (DONOS_RUST.has(d)) tabelasDeModulo.add(d);
+      }
+      if (tabelasDeModulo.size > 0) {
+        falha(
+          caminho,
+          1,
+          "dono-de-dado",
+          `\`${nome}\` está na raiz do crate e escreve em tabela de ` +
+            `${[...tabelasDeModulo].map((d) => `\`${d}\``).join(", ")}. Todo arquivo ` +
+            `que escreve mora num diretório de módulo, e o nome do diretório é o ` +
+            `id do dono (D96, I1). A exceção que existia durante a migração foi ` +
+            `removida em F5.`,
+        );
+      }
+    }
+
+    for (const [comando, donosEscritos] of escritasPorFuncaoDoArquivo(
+      readFileSync(caminho, "utf8"),
+    )) {
+      if (donosEscritos.size > 1) {
+        falha(
+          caminho,
+          1,
+          "dono-de-dado",
+          `\`${comando}\` escreve em tabelas de ${[...donosEscritos].map((d) => `\`${d}\``).join(" e ")} — ` +
+            `nenhum comando de um módulo escreve em tabela de outro (D67).`,
+        );
+        continue;
+      }
+      const donoEscrito = [...donosEscritos][0];
+      if (donoEscrito === undefined) continue;
+      // `local` (setting) é escrita da casca em nome de qualquer módulo; o que
+      // não pode é dado de módulo no comando de outro módulo.
+      if (donoEscrito === "local") continue;
+
+      if (donoDoArquivo !== null && donoDoArquivo !== donoEscrito) {
+        // A primeira metade de D67, agora verificável: o dono do arquivo é o
+        // dono do dado, e é o diretório que diz isso.
+        falha(
+          caminho,
+          1,
+          "dono-de-dado",
+          `\`${comando}\` mora em \`${donoDoArquivo}/\` e escreve em tabela de ` +
+            `\`${donoEscrito}\` — o caminho de escrita de um dado mora no módulo ` +
+            `dele (D96).`,
+        );
+        continue;
+      }
+
+      const moduloDaBridge = donos.get(comando);
+      const modulo = moduloDaBridge ? [...moduloDaBridge][0] : null;
+      if (modulo !== null && modulo !== donoEscrito) {
+        falha(
+          caminho,
+          1,
+          "dono-de-dado",
+          `\`${comando}\` escreve em tabela de \`${donoEscrito}\`, mas é invocado pela ` +
+            `bridge de \`${modulo}\` — comando de um módulo não grava dado de outro (D67).`,
+        );
+      }
+    }
+  }
+
+  // Comando invocado por duas bridges de módulos diferentes.
   for (const [comando, donosDaBridge] of donos) {
     const modulos = [...donosDaBridge];
     if (modulos.length > 1) {
       falha(
-        COMANDOS_RS,
+        ESTE_GATE,
         1,
         "dono-de-dado",
         `o comando \`${comando}\` é invocado pelas bridges de ${modulos.map((m) => `\`${m}\``).join(" e ")} — ` +
@@ -470,40 +694,95 @@ function donosPorComando() {
     }
   }
 
-  for (const [funcao, donosEscritos] of escritas) {
-    if (donosEscritos.size > 1) {
-      falha(
-        COMANDOS_RS,
-        1,
-        "dono-de-dado",
-        `\`${funcao}\` escreve em tabelas de ${[...donosEscritos].map((d) => `\`${d}\``).join(" e ")} — ` +
-          `nenhum comando de um módulo escreve em tabela de outro (D67).`,
-      );
-      continue;
+  // Regra 9 — registro × função (D97, I4). O registro é a fronteira entre Rust
+  // e TypeScript: um nome que diverge só falha em runtime, na tela.
+  {
+    const { nucleos, cascas } = funcoesDeIpc();
+    const registrados = comandosRegistrados();
+    for (const [nome, onde] of nucleos) {
+      if (!cascas.has(nome)) {
+        falha(
+          join(RAIZ, onde),
+          1,
+          "registro-de-comando",
+          `\`${nome}_core\` não tem casca \`#[tauri::command] fn ${nome}\`. Ou a ` +
+            `casca foi removida e o núcleo virou código morto, ou a casca está com ` +
+            `outro nome.`,
+        );
+      }
     }
-    const donoEscrito = [...donosEscritos][0];
-    if (donoEscrito === undefined) continue;
-    // `local` (setting) é escrita da casca em nome de qualquer módulo; o que
-    // não pode é dado de módulo no comando de outro módulo.
-    if (donoEscrito === "local") continue;
-    const moduloDaBridge = donos.get(funcao);
-    const modulo = moduloDaBridge ? [...moduloDaBridge][0] : null;
-    if (modulo !== null && modulo !== donoEscrito) {
+    for (const [nome, onde] of cascas) {
+      if (!nucleos.has(nome)) {
+        falha(
+          join(RAIZ, onde),
+          1,
+          "registro-de-comando",
+          `a casca \`${nome}\` não tem núcleo \`${nome}_core\`. A casca só ` +
+            `desembrulha o State e delega (commands.rs:10-12).`,
+        );
+        continue;
+      }
+      if (!registrados.has(nome)) {
+        falha(
+          join(RAIZ, onde),
+          1,
+          "registro-de-comando",
+          `a casca \`${nome}\` não está registrada em lib.rs. Sem registro, ` +
+            `\`invoke("${nome}")\` falha em runtime e a tela não acusa.`,
+        );
+      }
+    }
+    for (const [nome, linhas] of registrados) {
+      const LIB_RS = join(SRC_RUST, "lib.rs");
+      if (!cascas.has(nome)) {
+        falha(
+          LIB_RS,
+          linhas[0],
+          "registro-de-comando",
+          `lib.rs registra \`${nome}\`, que não é casca de nenhum comando. ` +
+            `Ou a casca foi apagada, ou sobrou registro.`,
+        );
+      }
+      if (linhas.length > 1) {
+        falha(
+          LIB_RS,
+          linhas[1],
+          "registro-de-comando",
+          `\`${nome}\` está registrado duas vezes em lib.rs ` + `(linhas ${linhas.join(" e ")}).`,
+        );
+      }
+    }
+  }
+
+  // Regra 10 — teto de `<módulo>/comandos.rs` (D100, I5). Vale só para o arquivo
+  // que o split cria e que volta a crescer: `tcc/docx.rs` é o round-trip DOCX,
+  // uma unidade coerente, e não é caminho de escrita.
+  for (const caminho of arquivosRust()) {
+    const rel = relative(RAIZ, caminho).split(sep).join("/");
+    const modulo = /^src-tauri\/src\/([^/]+)\/comandos\.rs$/.exec(rel)?.[1];
+    if (!modulo) continue;
+    const linhas = readFileSync(caminho, "utf8").split(/\r?\n/).length;
+    if (linhas > TETO_DE_COMANDOS) {
       falha(
-        COMANDOS_RS,
-        1,
-        "dono-de-dado",
-        `\`${funcao}\` escreve em tabela de \`${donoEscrito}\`, mas é invocado pela ` +
-          `bridge de \`${modulo}\` — comando de um módulo não grava dado de outro (D67).`,
+        caminho,
+        linhas,
+        "teto-de-comandos",
+        `\`${rel}\` tem ${linhas} linhas, acima do teto de ${TETO_DE_COMANDOS} ` +
+          `(D100). A resposta é dividir por sub-recurso, não subir o teto: o ` +
+          `dono do dado continua sendo \`${modulo}/\`.`,
       );
     }
   }
 }
 
 if (problemas.length === 0) {
+  const modulosRust = arquivosRust().filter((c) =>
+    /^src-tauri\/src\/[^/]+\/comandos\.rs$/.test(relative(RAIZ, c).split(sep).join("/")),
+  );
   console.log(
     `✓ fronteiras ok: ${arquivos.length} arquivos, ${tabelas.size} tabelas do backend ` +
-      `verificadas contra ${ALVO}/ (dono de dado: ${Object.keys(DONO_DA_TABELA).length} tabelas classificadas)`,
+      `verificadas contra ${ALVO}/ (dono de dado: ${Object.keys(DONO_DA_TABELA).length} ` +
+      `tabelas classificadas) · ${modulosRust.length} módulos Rust com caminho de escrita`,
   );
   process.exit(0);
 }
