@@ -11,10 +11,18 @@
  *
  * A regra 8 percorre `src-tauri/src` recursivamente e tira o dono de cada
  * escrita do **nome do diretório**. Antes ela lia `src-tauri/src/commands.rs`
- * por nome, e isso significava que dividir aquele arquivo — que é justamente o
- * que D96 manda fazer — deixava a regra sem ver escrita nenhuma e ainda verde.
- * Verificado em 2026-10-14: o gate acusava a violação antes do split e dava `✓`
- * depois.
+ * por nome, e isso significava que dividir aquele arquivo — que era justamente
+ * o que D96 mandava fazer — deixava a regra sem ver escrita nenhuma e ainda
+ * verde. Verificado em 2026-10-14: o gate acusava a violação antes do split e
+ * dava `✓` depois.
+ *
+ * A dívida que existiu entre F0 e F4 — o caminho de escrita morando na raiz do
+ * crate — morava em `EXCECOES_NA_RAIZ`, nomeada e impressa em cada execução. O
+ * arquivo sumiu em F5, e a exceção foi com ele: a regra fica mais dura do que o
+ * estado que ela mede.
+ *
+ * A verificação negativa é `npm run test:gate`: sem ela, "o gate está verde"
+ * não distingue "está certo" de "não viu nada".
  *
  * Sem dependência: só `node:*`. Roda em segundos e não precisa de `npm install`.
  *
@@ -386,17 +394,8 @@ const DONOS_RUST = new Set(["calendario", "faculdade", "estudos", "tcc"]);
 const SEM_DONO_RUST = new Set(["nucleo"]);
 
 /**
- * Arquivos da raiz do crate que ainda escrevem — a dívida nomeada de D98, I3.
- *
- * Ela é impressa em **toda** execução com a contagem de módulos que ainda
- * escrevem dali, e cada fatia da migração reduz a contagem. Sem esta lista, a
- * regra 8 ficaria vermelha no dia 1 e ninguém conseguiria landá-la antes do
- * split; com ela, o estado intermediário é verde porque o que falta está
- * **escrito na saída**. F5 apaga o ramo inteiro, e a lista vai com ele.
+ * Teto de linhas de `<módulo>/comandos.rs` (D100, I5).
  */
-const EXCECOES_NA_RAIZ = ["commands.rs"];
-
-/** Teto de linhas de `<módulo>/comandos.rs` (D100, I5). */
 const TETO_DE_COMANDOS = 2000;
 
 /** Todos os `.rs` de `src-tauri/src/`. */
@@ -604,11 +603,16 @@ const dividaNaRaiz = new Map();
       continue;
     }
 
-    // Arquivo da raiz que escreve e não está na dívida nomeada: é violação
-    // direta de I1. O corte de F5 é apagar este bloco.
-    const ehRaiz = pasta === undefined;
-    const nome = rel.slice("src-tauri/src/".length);
-    if (ehRaiz && !EXCECOES_NA_RAIZ.includes(nome)) {
+    // **Todo arquivo que escreve mora num diretório de módulo**, e o nome do
+    // diretório é o id do dono (D96, I1). Não há exceção: um arquivo de escrita
+    // na raiz do crate é violação, e é assim desde F5.
+    //
+    // A dívida que existiu entre F0 e F4 morava em `EXCECOES_NA_RAIZ`, uma lista
+    // nomeada e impressa em toda execução. Ela foi removida junto com o arquivo
+    // que a justificava — `commands.rs` não existe mais, e a regra precisa ficar
+    // mais dura do que o estado que ela mede.
+    if (pasta === undefined) {
+      const nome = rel.slice("src-tauri/src/".length);
       const escreve = escritasPorFuncaoDoArquivo(readFileSync(caminho, "utf8"));
       const tabelasDeModulo = new Set();
       for (const donosEscritos of escreve.values()) {
@@ -622,7 +626,8 @@ const dividaNaRaiz = new Map();
           `\`${nome}\` está na raiz do crate e escreve em tabela de ` +
             `${[...tabelasDeModulo].map((d) => `\`${d}\``).join(", ")}. Todo arquivo ` +
             `que escreve mora num diretório de módulo, e o nome do diretório é o ` +
-            `id do dono (D96, I1).`,
+            `id do dono (D96, I1). A exceção que existia durante a migração foi ` +
+            `removida em F5.`,
         );
       }
     }
@@ -646,10 +651,7 @@ const dividaNaRaiz = new Map();
       // não pode é dado de módulo no comando de outro módulo.
       if (donoEscrito === "local") continue;
 
-      if (ehRaiz && DONOS_RUST.has(donoEscrito)) {
-        if (!dividaNaRaiz.has(nome)) dividaNaRaiz.set(nome, new Set());
-        dividaNaRaiz.get(nome).add(donoEscrito);
-      } else if (donoDoArquivo !== null && donoDoArquivo !== donoEscrito) {
+      if (donoDoArquivo !== null && donoDoArquivo !== donoEscrito) {
         // A primeira metade de D67, agora verificável: o dono do arquivo é o
         // dono do dado, e é o diretório que diz isso.
         falha(
@@ -774,23 +776,14 @@ const dividaNaRaiz = new Map();
 }
 
 if (problemas.length === 0) {
-  const linhas = [
+  const modulosRust = arquivosRust().filter((c) =>
+    /^src-tauri\/src\/[^/]+\/comandos\.rs$/.test(relative(RAIZ, c).split(sep).join("/")),
+  );
+  console.log(
     `✓ fronteiras ok: ${arquivos.length} arquivos, ${tabelas.size} tabelas do backend ` +
-      `verificadas contra ${ALVO}/ (dono de dado: ${Object.keys(DONO_DA_TABELA).length} tabelas classificadas)`,
-  ];
-  if (dividaNaRaiz.size > 0) {
-    for (const [nome, mods] of dividaNaRaiz) {
-      linhas.push(
-        `  escrita na raiz do crate: ${nome} — ${mods.size} de ${DONOS_RUST.size} ` +
-          `módulos (${[...mods].sort().join(", ")}) · dívida D98`,
-      );
-    }
-    linhas.push(
-      `  o gate acima está verde, mas a dívida é real: a regra 8 só cobre os ` +
-        `módulos em diretório próprio.`,
-    );
-  }
-  console.log(linhas.join("\n"));
+      `verificadas contra ${ALVO}/ (dono de dado: ${Object.keys(DONO_DA_TABELA).length} ` +
+      `tabelas classificadas) · ${modulosRust.length} módulos Rust com caminho de escrita`,
+  );
   process.exit(0);
 }
 

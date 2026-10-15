@@ -16,7 +16,8 @@
 - **The state machine and the recurrence engine are in `src-tauri/`, not in `domain/`.** The pure rules live in `src-tauri/src/domain.rs` (`TRANSITIONS`, `transition_allowed`, `mark_overlaps`, `is_overdue`) and the recurrence expansion lives in `commands.rs::expand_rule`, which delegates to the **`rrule` crate (RFC 5545)**. The four files in `src/features/calendar/domain/` are **mirrors**, and `golden/*.jsonl` is the contract that proves the two agree: 49 transition cases, 10 overlap cases, 84 overdue cases, 12 recurrence cases. Both sides read the same files. Since D1 (2026-10-09) the mirrors are **test-only**: `ui/`, `data/` and `sync/` do not import them, and the read path hands the UI the derived `GridItem.allowedTransitions` (from `domain::destinations_of`) and `Responsibility.isOverdue`; concluding goes through `complete_item`, which writes the `execution_record` (INV-3). Rule 6 of `check-boundaries.mjs` fails if a production file imports one of the four again.
 - The rules are enforced **in the write path**, not only written: `exigir_transicao` refuses an illegal transition in `set_occurrence_state`, in `update_event` (a patch carrying `state`) and in `insert_execution`.
 - **There is no hand-written RRULE parser.** `expand_rule` builds an `rrule::RRule` and lets the crate apply the RFC. The six-key `HashMap` parser, `weekday_index`, `matches_freq`, `expand_monthly` and the `max_steps` cap were all removed on 2026-10-03 — see [`SPEC-D-002`](../docs/specs/desktop/SPEC-D-002-uma-verdade-de-recorrencia.md) D50 and its §13. Concretely, that removal fixed three bugs: `FREQ=MONTHLY` fell through to the `_` arm and became **weekly**; an invalid `FREQ` became `unwrap_or("WEEKLY")`; and `FREQ=WEEKLY` without `BYDAY` produced one occurrence **per day**.
-- `chrono` is a **direct** dependency, not a transitive one reached through `rrule`: `commands.rs` converts epoch-ms ↔ `DateTime<Tz>` itself, and depending on another crate's transitive dependency is borrowing an API you do not own.
+- `chrono` is a **direct** dependency, not a transitive one reached through `rrule`: `calendario/comandos.rs` converts epoch-ms ↔ `DateTime<Tz>` itself, and depending on another crate's transitive dependency is borrowing an API you do not own.
+- **The Rust backend is four modules, one directory each, and the write path lives inside the owner** (SPEC-D-015, `D96..D100`). `src-tauri/src/` is `nucleo/` (no data owner: `Db`, `DbError`, `new_id`, `now_ms`) plus `calendario/`, `faculdade/`, `estudos/` and `tcc/`. Each module directory holds its engine (`dominio.rs`, `media.rs`, `fsrs.rs`, `documento.rs`…), its `comandos.rs` (the only place that knows SQL) and its `testes.rs`. **The directory name is the owner id**: rule 8 of `check-boundaries.mjs` takes the owner from the path, so a file that writes outside its module is a gate failure, and a module directory that is not in `DONOS_RUST` is a gate failure. `commands.rs` — 6537 lines and 53% of the crate — no longer exists; it was the write path of all four owners at once, and `tcc/docx.rs` (1124 lines) is now the largest file, which is coherent: it is the DOCX round-trip, not a write path.
 - Derived values are computed on read and never persisted: `GridItem.has_conflict` (D7), `GridItem.allowed_transitions` (D1.3) and `Responsibility.is_overdue` (INV-4). There is no delay column in the schema, and nothing else compares `due_at` with the clock.
 - `data/` talks to the backend through `src/lib/ipc.ts` and knows the schema, not the SQL. It may not re-implement persistence, recurrence or any other domain rule.
 - **The screen reads through `data/calendar-store.ts` and not around it.** `calendarStore` is a module singleton wired to the real bridge, so the cache cannot be bypassed. It keys events by `<from>:<to>` — **not** `<mode>:<from>:<to>`, which is what `DP1` originally wrote: the mode decides *whether* responsibilities are read, not *under which key* events are stored.
@@ -56,7 +57,8 @@ A lista, na ordem, e a §`Commands` tem de bater com ela:
 | `lint` | `eslint .` (inclui prettier) | o próprio script |
 | `test` | `node --test` nos testes de `domain/`, `data/`, `ui/` e `shell/` | `npm run test` |
 | `test:golden` | os espelhos TS concordam com `golden/*.jsonl` | `npm run test:golden` |
-| `check:boundaries` | 8 regras de fronteira como código (a 8ª cruza bridge × tabela por dono, D67) | `npm run check:boundaries` |
+| `check:boundaries` | **10** regras de fronteira como código: sete de TypeScript, e três do Rust — a 8ª cruza bridge × tabela por dono e tira o dono do **caminho** do arquivo (D67, D96, D97), a 9ª cruza registro × função em `lib.rs` (D97, I4), a 10ª põe teto de 2000 linhas em `<módulo>/comandos.rs` (D100, I5) | `npm run check:boundaries` |
+| `test:gate` | **verificação negativa** do gate: injeta seis violações conhecidas e exige que cada uma seja acusada, inclusive num `fn` privado | `npm run test:gate` |
 | `verify:rust:domain` | `cargo test --lib --no-default-features` | o próprio script |
 | `verify:rust:clippy` | `cargo clippy --all-targets --all-features -- -D warnings` | o próprio script |
 | `verify:rust:fmt` | `cargo fmt --all -- --check` | o próprio script |
@@ -111,8 +113,9 @@ gerador manual não é neutro, é uma terceira implementação com o mesmo viés
 A feature `tauri-shell` (ligada por padrão) guarda as 48 cascas
 `#[tauri::command]` (Calendário + Faculdade + Estudos + TCC) e `lib.rs::run`.
 O número se mede com
-`Select-String -Path src-tauri\src\lib.rs -Pattern "commands::" -Encoding UTF8 | Measure-Object`.
-Sem ela o binário
+`Select-String -Path src-tauri\src\lib.rs -Pattern "comandos::" -Encoding UTF8 | Measure-Object` —
+o padrão mudou de `commands::` para `<módulo>::comandos::` em F4, quando
+`lib.rs` passou a registrar com o caminho do dono. Sem ela o binário
 de teste não linka
 `WebView2Loader.dll` nem a pilha de GUI (`user32`, `gdi32`, `dwmapi`,
 `WebView2Loader`), e o loader do Windows falha com `STATUS_ENTRYPOINT_NOT_FOUND`

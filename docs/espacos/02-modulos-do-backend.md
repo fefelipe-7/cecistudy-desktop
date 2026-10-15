@@ -4,8 +4,11 @@
 > Origem de grupo: [`SPEC-D-015`](../../../docs/specs/desktop/SPEC-D-015-modulos-do-backend-rust.md)
 > Decisões do app: `D96`, `D97`, `D98`, `D99`, `D100`
 > Data: 2026-10-14
-> Verificado em: 2026-10-14 (`cargo test --lib --no-default-features` → 160
-> passed, 1 ignored; `npm run check:boundaries` → 0 violações)
+> **Entregue em 2026-10-14** — F0 a F5 aplicadas. `commands.rs` não existe mais;
+> a dívida de `D98` é `0 de 4` e o ramo de exceção foi removido. Verificado em
+> `npm run verify` verde (typecheck, lint, test, test:golden, check:boundaries,
+> test:gate, 160 testes Rust, clippy, fmt, `cargo check`) e CI verde em
+> `ubuntu-latest`.
 
 > Por que este arquivo existe. O [`01-fronteiras.md`](./01-fronteiras.md) decide
 > **quem é dono de qual dado** e promete, em `D67`, "um módulo Rust por dono de
@@ -294,8 +297,9 @@ linhas. O gate falha nomeando o arquivo.
 
 ## A migração
 
-Seis fatias. Cada uma é um commit, cada uma é verde, e a ordem não é
-preferência: a fatia 0 é a que impede o verde falso.
+Seis fatias, aplicadas em 2026-10-14. Cada uma é um commit, cada uma é verde, e
+a ordem não é preferência: a fatia 0 é a que impede o verde falso. A tabela
+abaixo está no passado por ser o plano; a coluna final diz o que aconteceu.
 
 | # | O quê | O que fecha | Como se sabe que fechou |
 |---|---|---|---|
@@ -304,7 +308,26 @@ preferência: a fatia 0 é a que impede o verde falso.
 | **F2** | `faculdade/`: `materia/` → `faculdade/`, com `comandos.rs` e `testes.rs` | I1 para Faculdade | dívida cai para **2 de 4** |
 | **F3** | `estudos/comandos.rs` e `estudos/testes.rs` | idem | dívida cai para **1 de 4** |
 | **F4** | `tcc/comandos.rs` e `tcc/testes.rs` | idem | dívida cai para **0 de 4** |
-| **F5** | Apaga o ramo de exceção e a lista; `lib.rs` passa a registrar por caminho completo | I3 | `npm run verify` verde com a lista **ausente** da saída |
+| **F5** | Apaga o ramo de exceção e a lista; `lib.rs` passa a registrar por caminho completo | **I3** | `npm run verify` verde com a lista **ausente** da saída |
+
+**O que a execução mudou em relação ao plano.** Duas coisas, e as duas foram o
+gate funcionando:
+
+1. **F0 teve de renomear `materia/` para `faculdade/`.** O plano previa o
+   rename em F2, mas a regra nova exige que todo diretório de módulo esteja em
+   `DONOS_RUST`, e `materia` nunca foi o id do dono. F0 ficou vermelho até o
+   rename acontecer, e o plano adjustou. A invariante passa a valer desde o
+   primeiro dia, e não desde F2.
+2. **`lib.rs` passou a registrar com o caminho completo do dono em F1**, e não
+   em F5. Registrar `calendario::comandos::migrate` foi o que a regra 9 exigiu
+   assim que o comando mudou de lugar — não havia como adiar.
+
+E um erro meu que o gate pegou e que vale registrar: em `tcc/testes.rs` escrevi
+que o `use super::*` era dispensável, com uma medição que **rodou sobre build em
+cache** e por isso "passou" com o arquivo antigo. Com `touch` e rebuild, os
+erros aparecem. Um gate verde sobre build velho é pior do que nenhum gate, e é
+por isso que `npm run test:gate` não confia no cache: ele monta o fixture do
+zero e roda a cópia do gate.
 
 ### Por que `nucleo/`, e não `db.rs` na raiz
 
@@ -339,11 +362,12 @@ Números gerados, não copiados. Todos de **2026-10-14**.
 | Métrica | Como medir | Antes | Depois |
 |---|---|---|---|
 | Linhas em `commands.rs` | `wc -l src-tauri/src/commands.rs` | 6537 | o arquivo não existe |
-| Maior arquivo Rust do crate | `find src-tauri/src -name '*.rs' \| xargs wc -l \| sort -rn \| head -1` | 6537 | ver §"Depois" abaixo |
-| Escrita em arquivo sem dono | `npm run check:boundaries` (dívida impressa) | 1 de 4 | **0 de 4** |
+| Maior arquivo Rust do crate | `find src-tauri/src -name '*.rs' \| xargs wc -l \| sort -rn \| head -1` | 6537 (`commands.rs`) | 1827 (`calendario/comandos.rs`) |
+| Escrita em arquivo sem dono | `npm run check:boundaries` (dívida impressa) | 1 de 4 | **0 de 4** (a linha deixou de existir em F5) |
 | Diretórios de dono em `src-tauri/src/` | `find src-tauri/src -mindepth 1 -maxdepth 1 -type d` | 3 (`estudos`, `materia`, `tcc`) | 4 (`calendario`, `faculdade`, `estudos`, `tcc`) + `nucleo` |
-| `#[test]` dentro do arquivo de comandos | `grep -c '#\[test\]' src-tauri/src/*/comandos.rs \| paste -sd+ \| bc` | 62 em um arquivo | 62 em quatro `testes.rs` |
-| Comandos registrados | `grep -c 'commands::' src-tauri/src/lib.rs` | 48 | 48 — **não muda** |
+| `#[test]` dentro do arquivo de comandos | `grep -c '#\[test\]' src-tauri/src/*/comandos.rs \| paste -sd+ \| bc` | 62 | **0** — foram para `<módulo>/testes.rs` |
+| `#[test]` nos arquivos de teste do módulo | `grep -c '#\[test\]' src-tauri/src/*/testes.rs \| paste -sd+ \| bc` | 0 (eram inline) | 62, mais os de `db.rs` |
+| Comandos registrados | `grep -cE '^\s+\w+::comandos::\w+,$' src-tauri/src/lib.rs` | 48 | 48 — **não muda**, mas todos com caminho de dono |
 | Testes Rust | `npm run verify:rust:domain` | 160 passed, 1 ignored | 160 passed, 1 ignored |
 
 O "Depois" do maior arquivo é o que interessa: com o split, o maior passa a ser
