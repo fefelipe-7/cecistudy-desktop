@@ -63,7 +63,7 @@ toca `src-tauri/` além do rebrand técnico de D93 (`ADR-006`).
   `com.cecistudy.desktop`, título da janela = `cecistudy ♡`.
 - `index.html:7,9`: título e `meta author`.
 - Comentários de `src-tauri/migrations/*.sql`.
-- **O arquivo do banco não mudou** (`campus.sqlite`, `src-tauri/src/db.rs:29`):
+- **O arquivo do banco não mudou** (`campus.sqlite`, `src-tauri/src/nucleo/db.rs`):
   renomear base existente é perda de dado, e D93 não o inclui. Pendência de
   produto se a dona quiser o nome novo na base.
 

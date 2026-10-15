@@ -1,6 +1,13 @@
 # Spec 05 — Integração bidirecional com Google Calendar
 
 Data: 2026-09-28
+
+> **Citações de código desta pasta apontam para caminhos que não existem mais.**
+> `commands.rs`, `db.rs` e `domain.rs` viraram diretórios por dono de dado em
+> 2026-10-15 (`SPEC-D-015`, `D96..D100`). A tabela de correspondência e o que
+> continua valendo estão em
+> [`00-onde-estas-citacoes-apontam.md`](./00-onde-estas-citacoes-apontam.md).
+
 Escopo: conectar uma conta Google a um calendário dedicado, sincronizar nos dois sentidos com a política de permissão de `calendario.md` §10, resolver conflito sem sobrescrita silenciosa, tratar exclusão nos dois lados e exibir o estado de sincronização.
 Status: proposta fechada, **bloqueada por credenciais** até que exista um client OAuth (ver §4).
 

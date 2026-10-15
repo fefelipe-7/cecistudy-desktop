@@ -20,8 +20,9 @@ outro.
 
 O desktop hoje tem **um** módulo (Calendário), e ele já é dono de quase tudo que
 §3.1 lhe atribui. A metade mecânica do padrão já existe: nenhum nome de tabela
-atravessa a fronteira (`src/features/calendar/data/bridge.ts:3-5` e
-`src-tauri/src/commands.rs:3-5`) e `data/` conhece o schema, não o SQL. O que
+atravessa a fronteira (`src/features/calendar/data/bridge.ts:3-5` e o cabeçalho
+de [`calendario/comandos.rs`](../../src-tauri/src/calendario/comandos.rs)) e
+`data/` conhece o schema, não o SQL. O que
 faltava era a metade de **produto**: dizer quem é dono de quê, no app, de forma
 que um gate leia.
 
@@ -143,11 +144,15 @@ concorrente, que é o que §4.6 proíbe.
   olhar.
 - **Consequência aceita.** O gate é escrito do zero; a metade TypeScript entrou
   em 2026-10-09 (regra 7 de `scripts/check-boundaries.mjs`) e a metade Rust em
-  2026-10-09 também (regra 8, F8b). **A primeira metade da decisão — "um módulo
-  Rust por dono de dado" — continua sem cumprir**: `src-tauri/src/commands.rs` é
-  um módulo Rust só, e é o caminho de escrita de quatro donos. Ver
-  [`02-modulos-do-backend.md`](./02-modulos-do-backend.md) (`D96..D100`) e
-  [`SPEC-D-015`](../../../docs/specs/desktop/SPEC-D-015-modulos-do-backend-rust.md).
+  2026-10-09 também (regra 8, F8b).
+  **A primeira metade da decisão — "um módulo Rust por dono de dado" — ficou sem
+  cumprir até 2026-10-15**: `src-tauri/src/commands.rs` era um módulo Rust só e
+  o caminho de escrita de quatro donos. Foi cumprida pela
+  [`SPEC-D-015`](../../../docs/specs/desktop/SPEC-D-015-modulos-do-backend-rust.md)
+  (`D96..D100`, PR #1), e o que a regra 8 ganhou com isso está em
+  [`02-modulos-do-backend.md`](./02-modulos-do-backend.md): ela passou a tirar o
+  dono do **caminho** do arquivo, e a primeira verificação negativa provou que a
+  versão anterior ficava verde sobre uma violação real de `D67`.
 
 ## Invariantes e onde são garantidas
 
@@ -155,7 +160,7 @@ concorrente, que é o que §4.6 proíbe.
 |---|---|---|---|
 | I1 | Todo dado tem exatamente um dono declarado | a matriz desta seção + regra 8 de `check-boundaries.mjs` (tabela sem classificação é falha do gate) | `npm run check:boundaries` + revisão da lista |
 | I4 | Nenhuma `ui/` importa `data/` de outro módulo | regra 7 de `check-boundaries.mjs` | `npm run check:boundaries` |
-| I5 | Nenhum nome de tabela atravessa a fronteira IPC | `bridge.ts:3-5`, `commands.rs:3-5` | `rg -n "invoke" src` → só `ipc.ts` e `bridge.ts` |
+| I5 | Nenhum nome de tabela atravessa a fronteira IPC | `bridge.ts:3-5` e o cabeçalho de `<dono>/comandos.rs` de cada módulo | `rg -n "invoke" src` → só `ipc.ts` e `bridge.ts` |
 | I6 | Todo vínculo declara modo, e `copia-editorial` exige crédito | `ModoVinculo`/`Vinculo` (D66) | teste do módulo dono, quando existir |
 | I8 | Conteúdo é de Estudos; Faculdade o mostra por visão | a matriz (D65) | nenhum campo de conteúdo na tabela do módulo Faculdade |
 | I9 | Referência é da Biblioteca; o TCC a mostra por lista gerada | a matriz (D65) | a lista |
@@ -167,8 +172,10 @@ os módulos existirem. I4 passa a ser verificada por comando a partir de
 
 ## O gate de fronteira de módulo
 
-O gate mora em `scripts/check-boundaries.mjs` e roda em `npm run verify`. São
-**oito** regras; as duas da fronteira de módulo:
+O gate mora em `scripts/check-boundaries.mjs` e roda em `npm run verify`.
+São **dez** regras: sete de arquitetura TypeScript, a oitava de dono de dado no
+Rust, e a nona (registro × função) e a décima (teto de linhas), que vieram com a
+`SPEC-D-015`. As duas da fronteira de módulo:
 
 - **Regra 7 (`fronteira-de-modulo`)** transforma I4 em comando: para um arquivo
   em `src/features/<módulo>/ui/`, um import que resolve para
@@ -176,10 +183,14 @@ O gate mora em `scripts/check-boundaries.mjs` e roda em `npm run verify`. São
 - **Regra 8 (`dono-de-dado`)** transforma D67 em comando, e o cruzamento é o que
   a decisão descreve: o **módulo dono** de cada comando vem da bridge que o
   invoca (`src/features/<módulo>/data/`), as **tabelas escritas** vêm do corpo
-  das funções `pub fn` de `src-tauri/src/commands.rs`, e o gate recusa: comando
+  das funções de `src-tauri/src/**`, e o gate recusa: comando
   invocado por duas bridges de módulos, função que escreve em tabela de dois
   módulos, comando cujo módulo difere do dono da tabela escrita, tabela do
   schema sem dono classificado, e classificação de tabela que não existe mais.
+  **Desde 2026-10-15 (F0 da `SPEC-D-015`) o dono vem de dois lados**: o
+  nome do diretório onde o arquivo está — que é o dono do **dado** — e a bridge
+  que invoca — que é o dono do **uso**. A versão anterior lia um arquivo só por
+  nome, e dividir aquele arquivo a deixava verde sem ver escrita nenhuma.
   O corte do módulo de teste é no `#[cfg(test)] mod` — **não** no primeiro
   `#[cfg(test)]`, porque helpers marcados assim existem no meio do arquivo, e o
   corte no primeiro deixou o gate cego (medido em F8b2: verde sem ver escrita

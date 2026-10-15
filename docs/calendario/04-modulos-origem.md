@@ -1,6 +1,13 @@
 # Spec 04 — Fronteira com os módulos de origem
 
 Data: 2026-09-28
+
+> **Citações de código desta pasta apontam para caminhos que não existem mais.**
+> `commands.rs`, `db.rs` e `domain.rs` viraram diretórios por dono de dado em
+> 2026-10-15 (`SPEC-D-015`, `D96..D100`). A tabela de correspondência e o que
+> continua valendo estão em
+> [`00-onde-estas-citacoes-apontam.md`](./00-onde-estas-citacoes-apontam.md).
+
 Escopo: definir o contrato entre o Calendário e os módulos que ele projeta (Faculdade, Estudos, TCC, Estágio, Base de Conhecimento), garantir que editar no Calendário **envie um comando ao módulo dono** em vez de criar cópia, e entregar um adaptador de referência que rode sem que nenhum desses módulos exista.
 Status: proposta fechada, **parcialmente bloqueada** — os adaptadores reais dependem de código que não está neste repositório.
 

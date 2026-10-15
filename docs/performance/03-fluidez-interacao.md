@@ -1,5 +1,40 @@
 # Spec 03 — Fluidez e interação
 
+> **Arquivado em 2026-10-15. Não é fonte da verdade.**
+>
+> Três fatos, e nenhum é opinião:
+>
+> 1. **As citações de código daqui não resolvem mais.** Elas apontam para
+>    `commands.rs:NNN`, e esse arquivo não existe desde 2026-10-15 — o caminho de
+>    escrita foi para `<dono>/comandos.rs`, um diretório por dono
+>    ([`SPEC-D-015`](../../../docs/specs/desktop/SPEC-D-015-modulos-do-backend-rust.md),
+>    `D96..D100`). São 33 citações em três arquivos.
+> 2. **Nenhum item destas specs foi medido.** A própria spec admite, no índice:
+>    *"Todas as medições citadas nas specs 01 e 03 continuam sendo estimativas
+>    derivadas da leitura do código… a Fase P0 não rodou, e nenhuma delas foi
+>    substituída por número medido."* São 461 KB de prosa sobre custo de render
+>    sem uma medição de custo de render.
+> 3. **Descrevem um estado que já foi.** O `C-06` da spec 03 afirma que `origin`
+>    está ausente do wire; `GridItem` tem `origin` e `allDay` desde antes
+>    ([`types.ts:60,66`](../../src/features/calendar/domain/types.ts)). Item que
+>    descreve bug corrigido não é pendência: é distração.
+>
+> **O que vale.** As decisões `D*` de [`docs/calendario/`](../calendario/) e as
+> specs indexadas em [`docs/specs/`](../../../docs/specs/README.md). Onde este
+> arquivo e o código divergirem, vale o código.
+>
+> **Por que arquivado em vez de corrigido.** Corrigir as 33 citações seria
+> manter 461 KB de especificação não verificada por gate — o mesmo trabalho que a
+> SPEC-D-015 acabou de pagar no backend, aplicado a um documento que a própria
+> spec declara não medido. O que falta aqui não é remendo: é **rodar a Fase P0**
+> e re-derivar o que for medido. Isso é decisão de fase, não de escrita — ver
+> [`docs/todo/TO-DO-DESKTOP.md`](../todo/TO-DO-DESKTOP.md).
+>
+> O conteúdo abaixo fica **como registro do que foi levantado em 2026-09-29**,
+> e é útil exatamente nisso: é uma lista de hipóteses que ninguém mediu, e uma
+> hipótese não medida é um bom começo de fase.
+
+
 Data: 2026-09-29
 Escopo: auditar a fluidez do app (entrada, arrasto, scroll, feedback, teclado, microcopy) e especificar a implementação que transforma a grade de leitura em grade de manipulação. Esta spec **não cria** regras de domínio: ela executa as decisões que a spec 02 deixou em aberto (D17–D20) e consome a geometria que a spec 02 Fase 2.1 já entregou (`domain/grid-scale.ts`).
 Status: **proposta fechada** — nada aqui foi implementado.
@@ -300,7 +335,7 @@ Recusa, com o motivo:
 | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pointerrawupdate`                       | Disponível no Chromium desde o Chrome 77 e, portanto, no WebView2 — **mas a própria spec adverte**: "Adding listeners for the `pointerrawupdate` event might negatively impact the performance of the web page. A `pointerrawupdate` listener should only be added if JavaScript needs high frequency events and can handle them just as fast" ([Pointer Events 4, §4.2.5](https://www.w3.org/TR/pointerevents4/)). Não Firefox, não Safari. E com encaixe de 15 min (**DF3**) nós **precisamente não** queremos resolução sub-frame — o último evento coalescido é a posição correta. |
 | `getCoalescedEvents()`                   | Mesmo motivo. A coalescência do `pointermove` é **o que protege** o rAF loop: o Chrome adia o despacho de `pointermove` até logo antes do próximo quadro ([inside-browser part 4](https://developer.chrome.com/blog/inside-browser-part4)). Para uma grade com snap, perder o ponto intermediário é o comportamento correto.                                                                                                                                                                                                                                                           |
-| `will-change` permanente                 | `will-change: transform` num item que fica no DOM o tempo todo cria uma camada de composição por item e o浏览ador mantém memória. O ghost é montado **só** durante o gesto e desmontado no fim — a layer morre com ele.                                                                                                                                                                                                                                                                                                                                                                |
+| `will-change` permanente                 | `will-change: transform` num item que fica no DOM o tempo todo cria uma camada de composição por item e o navegador mantém memória. O ghost é montado **só** durante o gesto e desmontado no fim — a layer morre com ele.                                                                                                                                                                                                                                                                                                                                                                |
 | `animation-timeline: scroll()`           | Tem suporte no WebView2 Evergreen ([caniwebview — scroll-driven animations](https://caniwebview.com/features/web-feature-scroll-driven-animations/)), mas resolve um problema que não temos: animações **ligadas ao scroll**. Nossas animações são ligadas a **estado** (150 ms, `DESIGN.md:25`), e `transition` já faz isso sem custo de timeline. Guardar para quando existir algo rolando.                                                                                                                                                                                          |
 | `passive: true` nos listeners do arraste | O DF1 usa `pointerdown`/`pointermove` em fase de captura com `preventDefault` **deliberado** (impedir seleção de texto e arrasto nativo de imagem durante o gesto). `passive` é para listeners que **não** bloqueiam scroll ([Chrome — passive listeners](https://developer.chrome.com/blog/scrolling-intervention-2)). O que precisa ser `passive` é o `wheel` do auto-scroll (Fase F5), se existir.                                                                                                                                                                                  |
 
@@ -512,7 +547,7 @@ Sem throttle temporal. Um `setTimeout(…, 16)` introduz **lag de um quadro** em
 
 1. **Não há acessibilidade de graça.** A React Aria resolve teclado e leitor de tela num modelo testado com NVDA, JAWS e VoiceOver ([react-aria.adobe.com/blog/drag-and-drop](https://react-aria.adobe.com/blog/drag-and-drop)). Escrevemos isso do zero no DF11 e no DF5, e **não** vamos ter a mesma confiança de campo. Mitigação: o padrão é o mesmo que o Primer e o Darin Senneff documentam como o que funciona — texto estático + live region + `role="application"` no modo.
 2. **Sem sensores prontos.** Lib de DnD tem sensor de distância, de atraso, de toque longo, de teclado. O nosso tem o limiar de 4px (DF7) e nada mais — e é o suficiente, porque a spec 03 cobre toque por ações, não por arrasto.
-3. **Um滚动 aninhado para acertar.** O DF10 precisa mexer em `overscroll-behavior` e na largura mínima das colunas. Uma lib não teria esse problema, porque não sabe que existe um container externo.
+3. **Um container de scroll aninhado para acertar.** O DF10 precisa mexer em `overscroll-behavior` e na largura mínima das colunas. Uma lib não teria esse problema, porque não sabe que existe um container externo.
 
 ### 5.3 Ciclo de vida e cleanup
 

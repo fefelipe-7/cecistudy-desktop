@@ -23,12 +23,13 @@ F0 a F5 estão aplicados e verificados no PR #1. Falta o fecho.
 |---|---|---|
 | **A1** | **Decidir o merge do PR #1.** `MERGEABLE · CLEAN`, `verify=SUCCESS` em `ubuntu-latest` (1m42s). Squash preserva a ordem — que é o argumento do plano —; merge direto mantém os 6 commits legíveis | `gh pr view 1 --json state` devolve `MERGED` |
 | **A2** | Apagar a branch de segurança `wip-2026-10-14` do remoto. É o único estado pré-refactor que existe fora deste disco, e só tem valor enquanto o PR pode falhar | `git ls-remote origin \| grep wip` devolve vazio |
-| **A3** | **Declarar `D95`.** Ela é citada em quatro arquivos do código (`tcc/mod.rs:12,16,17,24`, `tcc/docx.rs:1`, `tcc/paginacao.rs:14,86`, `tcc/pdf.rs:1`) e **não existe** em nenhum bloco de decisão. O código aponta para um número que ninguém escreveu | `grep -rn "^## D95" docs/espacos/` devolve uma linha, ou o ponto declara explicitamente que a decisão é de `SPEC-D-011` e quem fecha |
+| **A3** | ~~**Declarar `D95`.**~~ **Fechado em 2026-10-15.** Era citada em cinco lugares do código (`tcc/mod.rs:14,18,19,26`, `docx.rs:1`, `paginacao.rs:14,86`, `pdf.rs:1`) e não existia em nenhum bloco de decisão. Declarada em [`tcc.md`](../espacos/tcc.md) §`D95`, com a ressalva de que o texto foi remontado das citações | `grep -rn "^## D95" docs/espacos/` devolve uma linha |
 | **A4** | Decidir o `verify:fast` que apareceu no `package.json` sem commit (typecheck + lint + test + golden + boundaries, sem Rust). Não é meu e não commitei | `git status --porcelain package.json` devolve vazio |
 
-**A3 é o item com prazo.** Decisão numerada que não existe é pior que
-ausência: o código cita `D95` como se houvesse um argumento, e quem ler não
-sabe se encontrou a decisão ou um número órfão.
+**A3 era o item com prazo e está fechado.** Decisão numerada sem registro é pior
+que ausência: o código aponta para um argumento que ninguém pode ler. O mesmo
+achado trouxe `I3` de marked "pendente" para "cumprida" — a exportação existe com
+o teste de paridade da sequência de texto (`docx.rs:918`).
 
 ---
 
@@ -39,20 +40,34 @@ todos de escrita mecânica, e nenhum muda regra.
 
 | # | O quê | Fecha quando |
 |---|---|---|
-| **B1** | [`roadmap.md`](../../roadmap.md) §"Estado verificado em 2026-10-13" está com seis fatos errados: **8 regras** (são 10), **134 testes Rust** (são 160), "**4 commits** (2026-09-28), branch `master`" (a main tem 7 e o trabalho está em branch), o caminho de `commands.rs`/`domain.rs`/`db.rs`, e o comando que conta comandos (`"commands::"`, que virou `"comandos::"` com caminho de dono) | cada linha do quadro re-gerada com o comando que a produz, no formato do quadro |
-| **B2** | O mesmo roadmap em **D4.1** cita `src-tauri/src/materia/` (virou `faculdade/`) e em **D4.2** diz "**9 comandos IPC**" do TCC (são 13) | `grep -n "materia/\|9 comandos IPC" roadmap.md` devolve vazio |
-| **B3** | **42 citações `commands.rs:NNN`** em 6 documentos, todas com linha que não existe mais | `grep -rn "commands\.rs:[0-9]" --include="*.md" .` devolve só as de propósito histórico |
-| **B4** | As **3 specs de performance** (`docs/performance/`) têm 33 dessas citações e pelo menos um item **descreve problema já resolvido**: o `C-06` diz "`origin` ausente no wire", e `GridItem` tem `origin` e `allDay` desde antes (`types.ts:60,66`) | cada item do C-01..C-0n marcado como resolvido, aberto ou ainda verdadeiro, com o comando que prova |
+| **B1** | ~~[`roadmap.md`](../../roadmap.md) §"Estado verificado"~~ **Fechado em 2026-10-15.** Seis fatos errados: **8 regras** (10), **134 testes Rust** (160), "**4 commits**, branch `master`" (17 na `main`), os caminhos de `commands.rs`/`domain.rs`/`db.rs`, o comando que conta comandos, e o parágrafo "Backend hoje" duplicado | cada linha do quadro re-gerada com o comando que a produz |
+| **B2** | ~~O roadmap em D4.1 e D4.2~~ **Fechado.** `materia/` → `faculdade/` e "9 comandos IPC" → 13. A varredura achou mais: [`faculdade.md`](../espacos/faculdade.md) tinha **15** referências a `materia/`, [`01-fronteiras.md`](../espacos/01-fronteiras.md) e [`tcc.md`](../espacos/tcc.md) citavam linhas de `commands.rs` que não existem | `grep -rn "materia/" docs/espacos/` devolve vazio |
+| **B3** | ~~**42 citações `commands.rs:NNN`**~~ **Fechado em 2026-10-15, por decisão de escopo.** As 33 das specs de performance foram **arquivadas** com banner, não reapontadas; as 9 dos docs vivos foram corrigidas | `grep -rn "commands\.rs:[0-9]" --include="*.md" docs/espacos/ docs/todo/` devolve só as de propósito histórico |
+| **B4** | ~~As 3 specs de performance~~ **Fechado por arquivamento.** 461 KB, **nenhuma medição rodada** — a própria spec admite que "a Fase P0 não rodou". O `C-06` delas afirma que `origin` está ausente do wire, e `GridItem` tem `origin` desde antes (`types.ts:60,66`) | os 4 arquivos de `docs/performance/` abrem com o banner de arquivado |
+| **B5** | **Reapontar as citações de [`docs/calendario/`](../calendario/)** — 31 ocorrências em 5 specs | `00-onde-estas-citacoes-apontam.md` entra na lista, e cada spec da pasta aponta para ele |
+| **B6** | **Rodar a Fase P0 das specs de performance**, se elas voltarem a valer. 461 KB de hipótese não medida só têm valor depois de medir | decisão de fase — ver `TO-DO` §C |
 
-**B3 e B4 juntos são a mesma tarefa**, e a ordem importa: primeiro o veredito
-(o item ainda vale?), depois o caminho (onde a regra está agora?). Citar
-`commands.rs:487` num documento que descreve um bug já corrigido produz um
-documento que mente duas vezes — no número e no fato.
+### Por que arquivar em vez de reapontar
 
-**O padrão de replacement** é o do próprio grupo: o dono do dado do
-`commands.rs` virou diretório, então `commands.rs:NNN` vira
-`<dono>/comandos.rs:NNN` — com o número **medido**, nunca herdado. E
-`domain.rs:N` vira `calendario/dominio.rs:N`.
+**B3 e B4 mudaram de natureza no meio da execução.** A tarefa era "reapontar 33
+citações", e a pergunta certa é *para que serve uma citação dentro de um
+documento que ninguém deve consultar*. A resposta é nenhuma: a spec de 461 KB
+declara que nenhuma das medições rodou, descreve um estado de 2026-09-29 que já
+foi, e um item que descreve bug corrigido não é pendência — é distração.
+
+Corrigir as 33 seria o mesmo trabalho que a `SPEC-D-015` acabou de pagar no
+backend, aplicado a um documento que a própria spec declara não medido. O que
+falta ali não é remendo: é **rodar a Fase P0** e re-derivar o que for medido.
+Isso virou `B6`, que é decisão de fase, não de escrita.
+
+### Por que `docs/calendario/` não foi arquivada
+
+Porque ela é a **origem** — `00-fundacao.md` com `D1..D46` é a fonte da
+governança do desktop e o melhor formato de decisão do grupo, e as invariantes
+`INV-1..INV-7` continuam verdadeiras. Regra não mudou de arquivo, mudou de
+lugar. Então ela fica, com um índice de correspondência
+([`00-onde-estas-citacoes-apontam.md`](../calendario/00-onde-estas-citacoes-apontam.md))
+e um aviso em cada spec que aponta para ele.
 
 ---
 
@@ -91,13 +106,14 @@ não volta; o que está aberto ou bloqueado está abaixo, com o bloqueio honesto
 
 ```
 A1, A2        merge e limpeza — destrava o resto
-A3            D95 tem prazo
-B1, B2        roadmap: seis fatos errados, escrita mecânica
-B3 + B4       as 42 citações: veredito primeiro, caminho depois
+A3            ~~D95~~  FECHADO
+B1, B2        ~~roadmap e os caminhos mortos~~  FECHADO
+B3, B4        ~~as citações e as specs de performance~~  FECHADO por arquivamento
+B5            reapontar docs/calendario — 31 citações, com o índice de correspondência pronto
 C1            cobertura de contrato do editor — o próximo buraco de gate
 C2            Conhecimento — destrava C7
 C3            Ceci
-C4..C7        bloqueados: só a dona do produto
+B6, C4..C7    bloqueados: só a dona do produto
 ```
 
 **Por que C1 vem antes de C2 e C3.** C2 e C3 são produto: telas e fluxos que

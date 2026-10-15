@@ -1,5 +1,40 @@
 # Specs de performance, transição e fluidez
 
+> **Arquivado em 2026-10-15. Não é fonte da verdade.**
+>
+> Três fatos, e nenhum é opinião:
+>
+> 1. **As citações de código daqui não resolvem mais.** Elas apontam para
+>    `commands.rs:NNN`, e esse arquivo não existe desde 2026-10-15 — o caminho de
+>    escrita foi para `<dono>/comandos.rs`, um diretório por dono
+>    ([`SPEC-D-015`](../../../docs/specs/desktop/SPEC-D-015-modulos-do-backend-rust.md),
+>    `D96..D100`). São 33 citações em três arquivos.
+> 2. **Nenhum item destas specs foi medido.** A própria spec admite, no índice:
+>    *"Todas as medições citadas nas specs 01 e 03 continuam sendo estimativas
+>    derivadas da leitura do código… a Fase P0 não rodou, e nenhuma delas foi
+>    substituída por número medido."* São 461 KB de prosa sobre custo de render
+>    sem uma medição de custo de render.
+> 3. **Descrevem um estado que já foi.** O `C-06` da spec 03 afirma que `origin`
+>    está ausente do wire; `GridItem` tem `origin` e `allDay` desde antes
+>    ([`types.ts:60,66`](../../src/features/calendar/domain/types.ts)). Item que
+>    descreve bug corrigido não é pendência: é distração.
+>
+> **O que vale.** As decisões `D*` de [`docs/calendario/`](../calendario/) e as
+> specs indexadas em [`docs/specs/`](../../../docs/specs/README.md). Onde este
+> arquivo e o código divergirem, vale o código.
+>
+> **Por que arquivado em vez de corrigido.** Corrigir as 33 citações seria
+> manter 461 KB de especificação não verificada por gate — o mesmo trabalho que a
+> SPEC-D-015 acabou de pagar no backend, aplicado a um documento que a própria
+> spec declara não medido. O que falta aqui não é remendo: é **rodar a Fase P0**
+> e re-derivar o que for medido. Isso é decisão de fase, não de escrita — ver
+> [`docs/todo/TO-DO-DESKTOP.md`](../todo/TO-DO-DESKTOP.md).
+>
+> O conteúdo abaixo fica **como registro do que foi levantado em 2026-09-29**,
+> e é útil exatamente nisso: é uma lista de hipóteses que ninguém mediu, e uma
+> hipótese não medida é um bom começo de fase.
+
+
 Três specs de implementação derivadas de uma auditoria do código atual do `cecistudy-desktop` (Tauri v2 + React 19 + Vite 8 + WebView2). Cobre os três eixos pedidos: **performance** (custo de render, IPC e arranque), **transições/animações** (sistema de motion) e **fluidez** (interação, arraste, input).
 
 Data: 2026-09-29

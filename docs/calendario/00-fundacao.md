@@ -1,6 +1,12 @@
 # Spec 00 — Fundação do módulo Calendário
 
 Data: 2026-09-28
+
+> **Citações de código desta pasta apontam para caminhos que não existem mais.**
+> `commands.rs`, `db.rs` e `domain.rs` viraram diretórios por dono de dado em
+> 2026-10-15 (`SPEC-D-015`, `D96..D100`). A tabela de correspondência e o que
+> continua valendo estão em
+> [`00-onde-estas-citacoes-apontam.md`](./00-onde-estas-citacoes-apontam.md).
 Escopo: fechar as decisões de `calendario.md` §12 e as decisões de arquitetura que não são deriváveis do código; fixar convenções de pasta, nomenclatura, cor de camada e persistência que as demais specs do Calendário consomem.
 Status: **implementada em 2026-09-29.** Fases 0.0 a 0.5 concluídas, mais uma fase extra (0.6) de correção de defeitos pré-existentes do shell. Critérios de aceite de §6 verificados: typecheck 0, lint 0 problems, build ok, dev server em `:1420` respondendo 200.
 

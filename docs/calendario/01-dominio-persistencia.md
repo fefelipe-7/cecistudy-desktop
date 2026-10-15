@@ -1,6 +1,13 @@
 # Spec 01 — Domínio do Calendário e persistência
 
 Data: 2026-09-28
+
+> **Citações de código desta pasta apontam para caminhos que não existem mais.**
+> `commands.rs`, `db.rs` e `domain.rs` viraram diretórios por dono de dado em
+> 2026-10-15 (`SPEC-D-015`, `D96..D100`). A tabela de correspondência e o que
+> continua valendo estão em
+> [`00-onde-estas-citacoes-apontam.md`](./00-onde-estas-citacoes-apontam.md).
+
 Escopo: materializar o modelo central de `calendario.md` §2, os níveis de §3, a máquina de estados de §4 e a recorrência de §5 como TypeScript puro, e persistir tudo em SQLite através de comandos Rust.
 Status: **Fases 1.1 a 1.9 implementadas** (2026-09-29). As Fases 1.4 a 1.9 não foram compiladas nem executadas — a validação do Rust depende do bloqueio de toolchain abaixo (§4).
 

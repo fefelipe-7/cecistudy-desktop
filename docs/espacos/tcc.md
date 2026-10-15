@@ -72,8 +72,10 @@ este documento **declara em aberto** — ver D77.
   que só guarda o texto não é paginável, e um editor que grava posições de página
   deixa de ser editável — o primeiro caractere digitado invalida tudo. O projeto
   já resolveu isso três vezes, com a mesma técnica: o schema **não tem** coluna de
-  atraso (`commands.rs:22-23`), o `calendar_event` **não** tem `responsibility_id`
-  (`commands.rs:19-20`) e a geometria da grade do Calendário é centralizada em um
+  atraso (INV-4, em [`calendario/comandos.rs`](../../src-tauri/src/calendario/comandos.rs),
+  que nunca compara `due_at` com o relógio), o `calendar_event` **não** tem
+  `responsibility_id` (INV-1, e o `UpsertBlock` exige o campo, então é o compilador
+  que impede a ausência) e a geometria da grade do Calendário é centralizada em um
   módulo puro com teste (`domain/grid-scale.ts`). A geometria **parâmetro** é a
   mesma disciplina, e ela é o que torna §4.7 "modelo da instituição **[P]**"
   possível sem um segundo motor.
